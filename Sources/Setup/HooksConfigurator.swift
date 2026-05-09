@@ -57,6 +57,13 @@ struct HooksConfigurator {
                 throw ConfigError.malformedSettings
             }
             json = existing
+
+            // Backup existing settings before modifying so users can recover
+            // if anything (including future versions of this code) goes wrong.
+            let backupURL = settingsPath.deletingLastPathComponent()
+                .appendingPathComponent("settings.json.ccpulse-backup")
+            try? FileManager.default.removeItem(at: backupURL)
+            try? FileManager.default.copyItem(at: settingsPath, to: backupURL)
         }
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
