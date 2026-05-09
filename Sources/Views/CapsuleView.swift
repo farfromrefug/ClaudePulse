@@ -45,7 +45,6 @@ struct CapsuleView: View {
     var body: some View {
         let s = settings.textSize.scale
         HStack(spacing: 8) {
-            // Claude logo icon with status color and animation
             claudeIconView
                 .frame(width: 16, height: 16)
 
@@ -104,7 +103,6 @@ struct CapsuleView: View {
         Image(systemName: "sparkle")
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(statusColor)
-            .modifier(IconAnimation(state: session?.state ?? .idle))
     }
 
     private var statusColor: Color {
@@ -126,46 +124,3 @@ struct CapsuleView: View {
     }
 }
 
-struct IconAnimation: ViewModifier {
-    let state: SessionState
-
-    @State private var isAnimating = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(opacity)
-            .scaleEffect(scale)
-            .onAppear { isAnimating = true }
-            .onChange(of: state) { _, _ in
-                isAnimating = false
-                withAnimation { isAnimating = true }
-            }
-            .animation(animation, value: isAnimating)
-    }
-
-    private var opacity: Double {
-        switch state {
-        case .working: return isAnimating ? 0.5 : 1.0
-        case .waitingForUser: return isAnimating ? 0.3 : 1.0
-        default: return 1.0
-        }
-    }
-
-    private var scale: CGFloat {
-        switch state {
-        case .working: return isAnimating ? 1.1 : 0.9
-        default: return 1.0
-        }
-    }
-
-    private var animation: Animation? {
-        switch state {
-        case .working:
-            return .easeInOut(duration: 2.5).repeatForever(autoreverses: true)
-        case .waitingForUser:
-            return .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
-        default:
-            return nil
-        }
-    }
-}
