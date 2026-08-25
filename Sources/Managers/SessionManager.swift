@@ -3,13 +3,20 @@ import Foundation
 @Observable
 class SessionManager {
     var sessions: [String: Session] = [:]
+    /// Account-wide rate limits, as last reported by the status line.
+    var usage: UsageSnapshot? = UsageSnapshot.restore()
     var activeSessionId: String?
     /// Permission prompts Claude Code is currently blocked on, oldest first.
     var pendingPermissions: [PendingPermission] = []
     private var stalenessTimer: Timer?
+    private var planUsageTimer: Timer?
+    private let planUsageReader = PlanUsageReader()
+    private var planUsageFileDate: Date?
     private var permissionTimers: [String: Timer] = [:]
 
     init() {
+        refreshPlanUsage()
+        startPlanUsageCheck()
         startStalenessCheck()
     }
 
@@ -87,6 +94,7 @@ class SessionManager {
             session.origin = origin
         }
         session.handleEvent(event)
+        session.refreshContextIfStale()
 
         // Claude Code moved on, so any prompt still on screen is obsolete.
         if ["PostToolUse", "PermissionDenied", "Stop"].contains(event.hookEventName) {
@@ -175,8 +183,14 @@ class SessionManager {
             session.state = .waitingForUser
         }
 
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.postDecisionRefreshDelay) { [weak session] in
+            session?.refreshContextIfStale(minimumInterval: 0)
+        }
     }
 
+    /// Long enough for Claude Code to have written its next transcript lines,
+    /// short enough that the panel feels like it reacted to the click.
+    static let postDecisionRefreshDelay: TimeInterval = 0.5
 
     private func removePermission(id: String) {
         permissionTimers.removeValue(forKey: id)?.invalidate()
@@ -201,6 +215,46 @@ class SessionManager {
         permissionTimers.values.forEach { $0.invalidate() }
         permissionTimers.removeAll()
         pendingPermissions.removeAll()
+    }
+
+    // MARK: - Account usage
+
+    /// Claude for Desktop samples the limits every few minutes, so checking
+    /// once a minute is enough, and the file is only re-read when it changes.
+    private func startPlanUsageCheck() {
+        planUsageTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.refreshPlanUsage()
+        }
+    }
+
+    func refreshPlanUsage(now: Date = Date()) {
+        let modified = planUsageReader.modifiedAt()
+        if let modified, modified == planUsageFileDate { return }
+        planUsageFileDate = modified
+
+        guard let snapshot = planUsageReader.read(now: now) else { return }
+        adopt(snapshot)
+    }
+
+    /// The status line and the desktop app's history describe the same limits
+    /// from different vantage points, so the more recent reading wins.
+    private func adopt(_ snapshot: UsageSnapshot) {
+        if let current = usage, current.updatedAt > snapshot.updatedAt { return }
+        usage = snapshot
+        snapshot.persist()
+    }
+
+    /// Claude Code renders its status line per session, so each payload updates
+    /// that session's context reading and the shared rate limits.
+    func handleStatusLine(_ payload: StatusLinePayload) {
+        if let snapshot = payload.usage {
+            adopt(snapshot)
+        }
+        if let sessionId = payload.sessionId,
+           let context = payload.context,
+           let session = sessions[sessionId] {
+            session.applyStatusLineContext(context)
+        }
     }
 
     func selectSession(_ id: String) {

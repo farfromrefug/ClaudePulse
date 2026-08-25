@@ -67,6 +67,14 @@ struct SessionRow: View {
                     .foregroundStyle(.white.opacity(0.4))
                     .help(revealHelp)
             }
+            if let context = session.contextWindow {
+                UsageRing(
+                    fraction: context.fraction,
+                    diameter: 11 * s,
+                    color: UsageTint.color(for: context.fraction, accent: settings.accentColor)
+                )
+                .help("Context window — \(context.summary)")
+            }
             if session.isActive, panelVisible {
                 TimelineView(.periodic(from: .now, by: 3)) { _ in
                     Text(session.formattedTime)

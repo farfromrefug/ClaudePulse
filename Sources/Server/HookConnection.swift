@@ -34,7 +34,12 @@ final class HookConnection {
         respond(body: body)
     }
 
-    func respond(status: String = "200 OK", body: String) {
+    /// The status line prints this reply verbatim, so it must not be JSON.
+    func respondPlainText(_ text: String) {
+        respond(contentType: "text/plain; charset=utf-8", body: text)
+    }
+
+    func respond(status: String = "200 OK", contentType: String = "application/json", body: String) {
         lock.lock()
         if responded {
             lock.unlock()
@@ -44,7 +49,7 @@ final class HookConnection {
         lock.unlock()
 
         let bodyData = Data(body.utf8)
-        let header = "HTTP/1.1 \(status)\r\nContent-Type: application/json\r\nContent-Length: \(bodyData.count)\r\nConnection: close\r\n\r\n"
+        let header = "HTTP/1.1 \(status)\r\nContent-Type: \(contentType)\r\nContent-Length: \(bodyData.count)\r\nConnection: close\r\n\r\n"
         var out = Data(header.utf8)
         out.append(bodyData)
         out.withUnsafeBytes { ptr in

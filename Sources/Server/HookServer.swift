@@ -7,6 +7,7 @@ class HookServer {
     static let portRange = UInt16(19280)...UInt16(19289)
 
     private let onEvent: (HookEvent, HookConnection) -> Void
+    private let onStatusLine: (StatusLinePayload) -> Void
     private let portRange: ClosedRange<UInt16>
     private let portFileURL: URL
     private(set) var port: UInt16 = HookServer.preferredPort
@@ -21,11 +22,13 @@ class HookServer {
     init(
         portRange: ClosedRange<UInt16> = HookServer.portRange,
         portFileURL: URL = HookServer.defaultPortFileURL,
-        onEvent: @escaping (HookEvent, HookConnection) -> Void
+        onEvent: @escaping (HookEvent, HookConnection) -> Void,
+        onStatusLine: @escaping (StatusLinePayload) -> Void = { _ in }
     ) {
         self.portRange = portRange
         self.portFileURL = portFileURL
         self.onEvent = onEvent
+        self.onStatusLine = onStatusLine
     }
 
     func start() throws {
@@ -66,6 +69,7 @@ class HookServer {
 
             self.serverSocket = sock
             self.port = candidatePort
+            Self.currentPort = candidatePort
             self.running = true
             writePortFile()
 
@@ -128,6 +132,21 @@ class HookServer {
             return
         }
 
+        // The status line is a separate feed: it is the only place Claude Code
+        // reports account-wide rate limits and the context window size.
+        if request.path == Self.statusLinePath {
+            guard let payload = try? JSONDecoder().decode(StatusLinePayload.self, from: request.body) else {
+                connection.respondPlainText("")
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.onStatusLine(payload)
+            }
+            // Pulse owns the status line, so it renders what Claude Code prints.
+            connection.respondPlainText(StatusLineRenderer.render(payload))
+            return
+        }
+
         guard var event = try? JSONDecoder().decode(HookEvent.self, from: request.body) else {
             connection.respondEmpty()
             return
@@ -143,6 +162,13 @@ class HookServer {
             self.onEvent(event, connection)
         }
     }
+
+    /// Where the wrapped `statusLine` command posts Claude Code's payload.
+    static let statusLinePath = "/statusline"
+
+    /// The port the running server bound to, for code that needs to write it
+    /// into a script or config without holding the server itself.
+    private(set) static var currentPort: UInt16?
 
     private struct ParsedRequest {
         let path: String

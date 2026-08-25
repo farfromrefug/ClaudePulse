@@ -46,13 +46,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServer() {
-        let server = HookServer { [weak self] event, connection in
-            guard let self else {
-                connection.respondEmpty()
-                return
+        let server = HookServer(
+            onEvent: { [weak self] event, connection in
+                guard let self else {
+                    connection.respondEmpty()
+                    return
+                }
+                self.sessionManager.handleEvent(event, connection: connection)
+            },
+            onStatusLine: { [weak self] payload in
+                self?.sessionManager.handleStatusLine(payload)
             }
-            self.sessionManager.handleEvent(event, connection: connection)
-        }
+        )
         do {
             try server.start()
             self.server = server
@@ -63,6 +68,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let configurator = HooksConfigurator()
                 if configurator.needsSetup() {
                     configurator.promptAndInstall(port: port)
+                }
+
+                // Only kept up to date if the user has already opted in from
+                // Settings. Pulse does not ask for the status line on launch:
+                // account usage normally comes from Claude for Desktop's own
+                // records, and taking the slot would break whatever status line
+                // the user already has for no gain.
+                let statusLine = StatusLineConfigurator()
+                if statusLine.needsScriptRefresh(port: port) {
+                    try? statusLine.refreshScript(port: port)
+                } else {
+                    // Port or permission settings may have changed since install.
+                    configurator.syncIfNeeded(port: port)
                 }
             }
         } catch HookServer.ServerError.anotherInstanceRunning {
@@ -399,6 +417,10 @@ struct DynamicIslandContent: View {
     private var actionButtons: some View {
         let s = settings.textSize.scale
         return HStack(spacing: 0) {
+            if let usage = sessionManager.usage {
+                GlobalUsageView(usage: usage)
+                    .padding(.leading, 4)
+            }
             Spacer()
 
             Button {

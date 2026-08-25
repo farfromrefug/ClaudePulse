@@ -65,6 +65,7 @@ enum TextSize: String, CaseIterable {
     }
 }
 
+
 /// Where clicking a session takes you.
 enum RevealTarget: String, CaseIterable {
     /// Focus the terminal the session actually runs in; fall back to Claude
@@ -135,13 +136,9 @@ class PanelSettings {
         }
     }
 
-    /// Float above fullscreen apps (video, Xcode fullscreen...). Off by default;
-    /// permission prompts still force themselves to the front when they appear.
-    var showOverFullscreen: Bool {
-        didSet {
-            UserDefaults.standard.set(showOverFullscreen, forKey: "showOverFullscreen")
-            NotificationCenter.default.post(name: .ccaniPanelBehaviorChanged, object: nil)
-        }
+    /// Set when the user declines the status line prompt, so it is asked once.
+    var statusLinePromptDismissed: Bool {
+        didSet { UserDefaults.standard.set(statusLinePromptDismissed, forKey: "statusLinePromptDismissed") }
     }
 
     var soundOnComplete: Bool {
@@ -150,6 +147,15 @@ class PanelSettings {
 
     var soundName: String {
         didSet { UserDefaults.standard.set(soundName, forKey: "soundName") }
+    }
+
+    /// Float above fullscreen apps (video, Xcode fullscreen...). Off by default;
+    /// permission prompts still force themselves to the front when they appear.
+    var showOverFullscreen: Bool {
+        didSet {
+            UserDefaults.standard.set(showOverFullscreen, forKey: "showOverFullscreen")
+            NotificationCenter.default.post(name: .ccaniPanelBehaviorChanged, object: nil)
+        }
     }
 
     /// Answer Claude Code permission prompts from the panel instead of the terminal.
@@ -187,6 +193,7 @@ class PanelSettings {
         let sizeRaw = UserDefaults.standard.string(forKey: "textSize") ?? TextSize.medium.rawValue
         self.textSize = TextSize(rawValue: sizeRaw) ?? .medium
         self.showDockIcon = UserDefaults.standard.bool(forKey: "showDockIcon")
+        self.statusLinePromptDismissed = UserDefaults.standard.bool(forKey: "statusLinePromptDismissed")
         self.soundOnComplete = UserDefaults.standard.bool(forKey: "soundOnComplete")
         self.soundName = UserDefaults.standard.string(forKey: "soundName") ?? "Glass"
         self.showOverFullscreen = UserDefaults.standard.bool(forKey: "showOverFullscreen")
