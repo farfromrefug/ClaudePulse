@@ -29,12 +29,22 @@ class DynamicIslandPanel: NSPanel {
         repositionForCurrentSettings()
     }
 
+    /// True while a permission prompt is waiting: the panel then floats over
+    /// fullscreen apps even when the user opted out of that for normal use.
+    var isUrgent = false {
+        didSet {
+            guard isUrgent != oldValue else { return }
+            applyWindowBehavior()
+        }
+    }
+
     /// Whether the panel joins fullscreen spaces, and how high it floats.
     func applyWindowBehavior() {
-        let overFullscreen = PanelSettings.shared.showOverFullscreen
+        let overFullscreen = isUrgent || PanelSettings.shared.showOverFullscreen
         if overFullscreen {
             collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            level = .floating
+            // Above the menu bar / fullscreen chrome so the prompt is reachable.
+            level = isUrgent ? .screenSaver : .floating
         } else {
             // Without .fullScreenAuxiliary the panel stays out of fullscreen spaces.
             collectionBehavior = [.canJoinAllSpaces, .stationary]

@@ -109,6 +109,20 @@ class PanelSettings {
         didSet { UserDefaults.standard.set(soundName, forKey: "soundName") }
     }
 
+    /// Answer Claude Code permission prompts from the panel instead of the terminal.
+    var permissionControl: Bool {
+        didSet {
+            UserDefaults.standard.set(permissionControl, forKey: "permissionControl")
+            NotificationCenter.default.post(name: .ccaniHooksNeedSync, object: nil)
+        }
+    }
+
+    /// How long a permission prompt waits in the panel before handing control
+    /// back to the terminal.
+    var permissionTimeout: Double {
+        didSet { UserDefaults.standard.set(permissionTimeout, forKey: "permissionTimeout") }
+    }
+
     static let availableSounds = [
         "Glass", "Ping", "Pop", "Hero", "Blow",
         "Bottle", "Frog", "Funk", "Morse",
@@ -129,5 +143,8 @@ class PanelSettings {
         self.soundOnComplete = UserDefaults.standard.bool(forKey: "soundOnComplete")
         self.soundName = UserDefaults.standard.string(forKey: "soundName") ?? "Glass"
         self.showOverFullscreen = UserDefaults.standard.bool(forKey: "showOverFullscreen")
+        self.permissionControl = UserDefaults.standard.bool(forKey: "permissionControl")
+        let storedTimeout = UserDefaults.standard.double(forKey: "permissionTimeout")
+        self.permissionTimeout = storedTimeout > 0 ? storedTimeout : 120
     }
 }

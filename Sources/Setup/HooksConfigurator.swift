@@ -188,10 +188,15 @@ struct HooksConfigurator {
         "http://127.0.0.1:\(port)/hook"
     }
 
-    /// Seconds Claude Code waits for Pulse to answer. Events are answered
-    /// immediately, so this stays short: if Pulse is wedged or gone, Claude
-    /// Code moves on almost instantly.
-    static func timeout(for event: String) -> Double { 3 }
+    /// Seconds Claude Code waits for Pulse to answer. Everything but a
+    /// permission prompt is answered immediately, so those stay short: if Pulse
+    /// is wedged or gone, Claude Code moves on almost instantly.
+    static func timeout(for event: String) -> Double {
+        guard event == "PermissionRequest" else { return 3 }
+        guard PanelSettings.shared.permissionControl else { return 3 }
+        // Give the panel its full window plus slack for the round trip.
+        return max(10, PanelSettings.shared.permissionTimeout + 10)
+    }
 
     static func hookDefinition(port: UInt16, event: String) -> [String: Any] {
         var headers: [String: String] = ["X-Pulse-Hook": "1"]

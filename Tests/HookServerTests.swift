@@ -65,14 +65,34 @@ final class HookServerTests: XCTestCase {
     }
 
 
+    /// The whole point of the HTTP transport: a permission prompt can hold the
+    /// request open and answer it later with a decision.
+    func testDeferredPermissionResponse() throws {
+        let port = try startServer { _, connection in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) {
+                connection.respond(json: SessionManager.hookOutput(for: .allow, suggestions: []))
+            }
+        }
+
+        let body = try post(port: port, body: """
+        {"session_id":"abc","hook_event_name":"PermissionRequest","tool_name":"Bash"}
+        """)
+
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        let specific = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
+        let decision = try XCTUnwrap(specific["decision"] as? [String: Any])
+        XCTAssertEqual(specific["hookEventName"] as? String, "PermissionRequest")
+        XCTAssertEqual(decision["behavior"] as? String, "allow")
+    }
+
     func testRespondsOnlyOnce() throws {
         let port = try startServer { _, connection in
-            connection.respond(json: ["systemMessage": "first"])
+            connection.respond(json: SessionManager.hookOutput(for: .deny, suggestions: []))
             connection.respondEmpty()
         }
 
-        let body = try post(port: port, body: #"{"session_id":"a","hook_event_name":"Stop"}"#)
-        XCTAssertTrue(body.contains("first"), body)
+        let body = try post(port: port, body: #"{"session_id":"a","hook_event_name":"PermissionRequest"}"#)
+        XCTAssertTrue(body.contains("deny"), body)
     }
 
     /// A body split across TCP segments must still decode.
@@ -85,10 +105,10 @@ final class HookServerTests: XCTestCase {
 
         let padding = String(repeating: "x", count: 300_000)
         _ = try post(port: port, body: """
-        {"session_id":"big","hook_event_name":"PreToolUse","tool_name":"Write","prompt":"\(padding)"}
+        {"session_id":"big","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"content":"\(padding)"}}
         """)
 
         XCTAssertEqual(received?.sessionId, "big")
-        XCTAssertEqual(received?.prompt?.count, 300_000)
+        XCTAssertEqual(received?.toolInput?["content"]?.stringValue?.count, 300_000)
     }
 }

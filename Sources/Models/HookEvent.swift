@@ -7,6 +7,9 @@ struct HookEvent: Decodable {
     let toolName: String?
     let notificationType: String?
     let prompt: String?
+    let toolInput: JSONValue?
+    let toolUseId: String?
+    let permissionSuggestions: [JSONValue]?
     let transcriptPath: String?
     let permissionMode: String?
     let message: String?
@@ -19,6 +22,9 @@ struct HookEvent: Decodable {
         case toolName = "tool_name"
         case notificationType = "notification_type"
         case prompt
+        case toolInput = "tool_input"
+        case toolUseId = "tool_use_id"
+        case permissionSuggestions = "permission_suggestions"
         case transcriptPath = "transcript_path"
         case permissionMode = "permission_mode"
         case message

@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        sessionManager.releaseAllPermissions()
         server?.stop()
         updateChecker.stop()
         if let monitor = clickMonitor {
@@ -137,10 +138,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(repositionPanel), name: .ccaniRepositionPanel, object: nil)
         // Fullscreen / level changes from settings
         NotificationCenter.default.addObserver(self, selector: #selector(applyPanelBehavior), name: .ccaniPanelBehaviorChanged, object: nil)
+        // A waiting permission prompt pulls the panel to the front.
+        NotificationCenter.default.addObserver(self, selector: #selector(permissionsChanged), name: .ccaniPermissionsChanged, object: nil)
+        // Permission settings change the hook timeouts Claude Code is told about.
+        NotificationCenter.default.addObserver(self, selector: #selector(syncHooks), name: .ccaniHooksNeedSync, object: nil)
     }
 
     @objc private func openSettingsWindow() {
         settingsController.showSettings(updateChecker: updateChecker)
+    }
+
+    @objc private func permissionsChanged() {
+        let waiting = !sessionManager.pendingPermissions.isEmpty
+        panel?.isUrgent = waiting
+        if waiting {
+            panel?.orderFrontRegardless()
+            NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
+
+    @objc private func syncHooks() {
+        guard !UserDefaults.standard.bool(forKey: "disableHookSetup") else { return }
+        guard let port = server?.port else { return }
+        HooksConfigurator().syncIfNeeded(port: port)
     }
 
     @objc private func applyPanelBehavior() {
@@ -222,6 +242,8 @@ extension Notification.Name {
     static let ccaniOpenSettings = Notification.Name("ccaniOpenSettings")
     static let ccaniRepositionPanel = Notification.Name("ccaniRepositionPanel")
     static let ccaniPanelBehaviorChanged = Notification.Name("ccaniPanelBehaviorChanged")
+    static let ccaniPermissionsChanged = Notification.Name("ccaniPermissionsChanged")
+    static let ccaniHooksNeedSync = Notification.Name("ccaniHooksNeedSync")
 }
 
 @main
@@ -255,9 +277,14 @@ struct DynamicIslandContent: View {
     @State private var pinHovered = false
     @State private var isPanelVisible = true
 
-    private var shouldExpand: Bool {
-        settings.pinExpanded || isExpanded
+    private var permissions: [PendingPermission] {
+        sessionManager.pendingPermissions
     }
+
+    private var shouldExpand: Bool {
+        settings.pinExpanded || isExpanded || !permissions.isEmpty
+    }
+
 
     private var cornerRadius: CGFloat {
         shouldExpand ? 20 : 18
@@ -328,9 +355,24 @@ struct DynamicIslandContent: View {
         if expandsUpward {
             actionButtons
             detailSection
+            permissionSection
         } else {
+            permissionSection
             detailSection
             actionButtons
+        }
+    }
+
+    @ViewBuilder
+    private var permissionSection: some View {
+        if !permissions.isEmpty {
+            PermissionListView(
+                permissions: permissions,
+                sessionName: { sessionManager.sessions[$0]?.projectName ?? "session" },
+                onDecision: { permission, decision in
+                    sessionManager.respond(to: permission, decision: decision)
+                }
+            )
         }
     }
 
