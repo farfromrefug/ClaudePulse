@@ -45,8 +45,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServer() {
-        let server = HookServer { [weak self] event in
-            self?.sessionManager.handleEvent(event)
+        let server = HookServer { [weak self] event, connection in
+            guard let self else {
+                connection.respondEmpty()
+                return
+            }
+            self.sessionManager.handleEvent(event, connection: connection)
         }
         do {
             try server.start()

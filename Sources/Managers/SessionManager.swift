@@ -38,6 +38,12 @@ class SessionManager {
         }
     }
 
+    func handleEvent(_ event: HookEvent, connection: HookConnection) {
+        // Nothing here defers a reply yet, so the hook is released at once.
+        connection.respondEmpty()
+        handleEvent(event)
+    }
+
     func handleEvent(_ event: HookEvent) {
         if event.hookEventName == "SessionEnd" {
             sessions.removeValue(forKey: event.sessionId)
