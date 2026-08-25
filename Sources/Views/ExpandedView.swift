@@ -86,6 +86,16 @@ struct SessionRow: View {
                 isHovered = hovering
             }
         }
+        .help(rowHelp)
+    }
+
+    /// The full path is the only way to tell two same-named folders apart, and
+    /// it makes a stale or unexpected working directory obvious.
+    private var rowHelp: String {
+        var lines = [session.cwd ?? "(unknown directory)"]
+        if let tool = session.lastToolName { lines.append("last tool: \(tool)") }
+        lines.append("session \(session.id.prefix(8))")
+        return lines.joined(separator: "\n")
     }
 
     private var revealHelp: String {

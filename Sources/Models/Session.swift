@@ -23,10 +23,16 @@ class Session: Identifiable {
     func handleEvent(_ event: HookEvent) {
         lastEventTime = Date()
 
+        // Every hook carries the session's current directory, and it can move
+        // (cd, worktree switch, /add-dir). Track it on every event so the name
+        // never goes stale.
+        if let cwd = event.cwd, !cwd.isEmpty, cwd != self.cwd {
+            self.cwd = cwd
+        }
+
         switch event.hookEventName {
-        case "SessionStart":
-            state = .idle
-            if let cwd = event.cwd { self.cwd = cwd }
+        case "SessionStart", "CwdChanged":
+            if event.hookEventName == "SessionStart" { state = .idle }
         case "UserPromptSubmit":
             state = .working
             if let prompt = event.prompt {

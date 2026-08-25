@@ -11,7 +11,7 @@ struct HooksConfigurator {
     static let events = [
         "SessionStart", "SessionEnd",
         "UserPromptSubmit", "PreToolUse", "PostToolUse",
-        "PostToolUseFailure", "Notification",
+        "PostToolUseFailure", "Notification", "CwdChanged",
         "PermissionRequest", "PermissionDenied", "Stop"
     ]
 
