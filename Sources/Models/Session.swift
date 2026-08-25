@@ -10,6 +10,8 @@ class Session: Identifiable {
     var cwd: String?
     var lastToolName: String?
     var lastPrompt: String?
+    /// Terminal the session runs in, learned from hook request headers.
+    var origin: TerminalOrigin?
 
     init(id: String, cwd: String? = nil) {
         self.id = id

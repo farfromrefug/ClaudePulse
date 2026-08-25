@@ -64,6 +64,43 @@ final class HookServerTests: XCTestCase {
         XCTAssertEqual(received?.toolName, "Bash")
     }
 
+    func testParsesTerminalHeaders() throws {
+        var received: HookEvent?
+        let port = try startServer { event, connection in
+            received = event
+            connection.respondEmpty()
+        }
+
+        _ = try post(
+            port: port,
+            body: #"{"session_id":"abc","hook_event_name":"SessionStart"}"#,
+            headers: [
+                "X-Pulse-Term-Program": "iTerm.app",
+                "X-Pulse-Iterm-Session": "w0t1p0:UUID-1"
+            ]
+        )
+
+        XCTAssertEqual(received?.origin?.termProgram, "iTerm.app")
+        XCTAssertEqual(received?.origin?.itermSessionId, "w0t1p0:UUID-1")
+    }
+
+    /// Env vars Claude Code cannot resolve arrive as empty strings; those must
+    /// not be mistaken for a real terminal.
+    func testEmptyHeadersProduceNoOrigin() throws {
+        var received: HookEvent?
+        let port = try startServer { event, connection in
+            received = event
+            connection.respondEmpty()
+        }
+
+        _ = try post(
+            port: port,
+            body: #"{"session_id":"abc","hook_event_name":"SessionStart"}"#,
+            headers: ["X-Pulse-Term-Program": "", "X-Pulse-Iterm-Session": ""]
+        )
+
+        XCTAssertNil(received?.origin)
+    }
 
     /// The whole point of the HTTP transport: a permission prompt can hold the
     /// request open and answer it later with a decision.

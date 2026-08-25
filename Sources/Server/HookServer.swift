@@ -128,10 +128,13 @@ class HookServer {
             return
         }
 
-        guard let event = try? JSONDecoder().decode(HookEvent.self, from: request.body) else {
+        guard var event = try? JSONDecoder().decode(HookEvent.self, from: request.body) else {
             connection.respondEmpty()
             return
         }
+        let origin = TerminalOrigin(headers: request.headers)
+        event.origin = origin.isEmpty ? nil : origin
+
         DispatchQueue.main.async { [weak self] in
             guard let self else {
                 connection.respondEmpty()

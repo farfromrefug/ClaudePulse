@@ -223,6 +223,30 @@ struct SettingsView: View {
                     }
                 }
 
+                // Fallback reveal target
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reveal In")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white)
+                        Text("Auto: the session's terminal, else Claude")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.35))
+                    }
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { settings.revealTarget },
+                        set: { settings.revealTarget = $0 }
+                    )) {
+                        ForEach(RevealTarget.allCases, id: \.self) { target in
+                            Text(target.displayName).tag(target)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 110)
+                }
+
                 // Accent color selector
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Accent Color")

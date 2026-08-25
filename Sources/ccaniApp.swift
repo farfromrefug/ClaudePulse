@@ -371,6 +371,12 @@ struct DynamicIslandContent: View {
                 sessionName: { sessionManager.sessions[$0]?.projectName ?? "session" },
                 onDecision: { permission, decision in
                     sessionManager.respond(to: permission, decision: decision)
+                },
+                onFocusSession: { sessionId in
+                    sessionManager.selectSession(sessionId)
+                    if let session = sessionManager.sessions[sessionId] {
+                        SessionOpener.reveal(session)
+                    }
                 }
             )
         }
@@ -382,6 +388,9 @@ struct DynamicIslandContent: View {
             sessions: sessionManager.sortedSessions,
             onSelectSession: { id in
                 sessionManager.selectSession(id)
+            },
+            onOpenSession: { session, forceClaudeDesktop in
+                SessionOpener.reveal(session, forceClaudeDesktop: forceClaudeDesktop)
             }
         )
         .padding(.top, expandsUpward ? 0 : 4)

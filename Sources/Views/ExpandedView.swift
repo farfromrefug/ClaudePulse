@@ -1,16 +1,23 @@
+import AppKit
 import SwiftUI
 
 struct ExpandedDetailView: View {
     let session: Session?
     let sessions: [Session]
     let onSelectSession: (String) -> Void
+    let onOpenSession: (Session, Bool) -> Void
     private let settings = PanelSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(sessions) { s in
                 SessionRow(session: s, isSelected: s.id == session?.id)
-                    .onTapGesture { onSelectSession(s.id) }
+                    .onTapGesture {
+                        // Option-click always hands the session to Claude for Desktop.
+                        let optionHeld = NSEvent.modifierFlags.contains(.option)
+                        onSelectSession(s.id)
+                        onOpenSession(s, optionHeld)
+                    }
             }
         }
         .padding(.horizontal, 10)
@@ -54,6 +61,12 @@ struct SessionRow: View {
                 }
             }
             Spacer()
+            if isHovered {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 9 * s, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .help(revealHelp)
+            }
             if session.isActive, panelVisible {
                 TimelineView(.periodic(from: .now, by: 3)) { _ in
                     Text(session.formattedTime)
@@ -73,6 +86,10 @@ struct SessionRow: View {
                 isHovered = hovering
             }
         }
+    }
+
+    private var revealHelp: String {
+        "Click to reveal this session — Option-click to show it in Claude"
     }
 
     private var rowStateColor: Color {

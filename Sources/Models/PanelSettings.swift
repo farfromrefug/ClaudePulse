@@ -65,6 +65,49 @@ enum TextSize: String, CaseIterable {
     }
 }
 
+/// Where clicking a session takes you.
+enum RevealTarget: String, CaseIterable {
+    /// Focus the terminal the session actually runs in; fall back to Claude
+    /// for Desktop when Pulse cannot identify one.
+    case auto
+    case claudeDesktop
+    case finder
+    case terminal
+    case iterm
+    case ghostty
+    case vscode
+    case codium
+    case cursor
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .claudeDesktop: return "Claude"
+        case .finder: return "Finder"
+        case .terminal: return "Terminal"
+        case .iterm: return "iTerm2"
+        case .ghostty: return "Ghostty"
+        case .vscode: return "VS Code"
+        case .codium: return "VSCodium"
+        case .cursor: return "Cursor"
+        }
+    }
+
+    var bundleIdentifier: String? {
+        switch self {
+        case .auto: return nil
+        case .claudeDesktop: return "com.anthropic.claudefordesktop"
+        case .finder: return "com.apple.finder"
+        case .terminal: return "com.apple.Terminal"
+        case .iterm: return "com.googlecode.iterm2"
+        case .ghostty: return "com.mitchellh.ghostty"
+        case .vscode: return "com.microsoft.VSCode"
+        case .codium: return "com.vscodium"
+        case .cursor: return "com.todesktop.230313mzl4w4u92"
+        }
+    }
+}
+
 @Observable
 class PanelSettings {
     static let shared = PanelSettings()
@@ -123,6 +166,10 @@ class PanelSettings {
         didSet { UserDefaults.standard.set(permissionTimeout, forKey: "permissionTimeout") }
     }
 
+    var revealTarget: RevealTarget {
+        didSet { UserDefaults.standard.set(revealTarget.rawValue, forKey: "revealTarget") }
+    }
+
     static let availableSounds = [
         "Glass", "Ping", "Pop", "Hero", "Blow",
         "Bottle", "Frog", "Funk", "Morse",
@@ -146,5 +193,7 @@ class PanelSettings {
         self.permissionControl = UserDefaults.standard.bool(forKey: "permissionControl")
         let storedTimeout = UserDefaults.standard.double(forKey: "permissionTimeout")
         self.permissionTimeout = storedTimeout > 0 ? storedTimeout : 120
+        let revealRaw = UserDefaults.standard.string(forKey: "revealTarget") ?? RevealTarget.auto.rawValue
+        self.revealTarget = RevealTarget(rawValue: revealRaw) ?? .auto
     }
 }

@@ -5,6 +5,7 @@ struct PermissionListView: View {
     let permissions: [PendingPermission]
     let sessionName: (String) -> String
     let onDecision: (PendingPermission, PermissionDecision) -> Void
+    let onFocusSession: (String) -> Void
     private let settings = PanelSettings.shared
 
     var body: some View {
@@ -13,7 +14,8 @@ struct PermissionListView: View {
                 PermissionRow(
                     permission: permission,
                     projectName: sessionName(permission.sessionId),
-                    onDecision: { onDecision(permission, $0) }
+                    onDecision: { onDecision(permission, $0) },
+                    onFocusSession: { onFocusSession(permission.sessionId) }
                 )
             }
         }
@@ -27,6 +29,7 @@ struct PermissionRow: View {
     let permission: PendingPermission
     let projectName: String
     let onDecision: (PermissionDecision) -> Void
+    let onFocusSession: () -> Void
     private let settings = PanelSettings.shared
 
     var body: some View {
@@ -90,6 +93,11 @@ struct PermissionRow: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(.orange.opacity(0.25), lineWidth: 0.5)
         )
+        // The buttons swallow their own clicks, so this only fires on the rest
+        // of the card — going to look at the session should not answer for it.
+        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .onTapGesture { onFocusSession() }
+        .help("Click to reveal this session — the buttons answer without leaving Pulse")
     }
 
     private func remaining(at date: Date) -> String {

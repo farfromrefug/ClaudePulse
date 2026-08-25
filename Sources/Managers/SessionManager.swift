@@ -83,6 +83,9 @@ class SessionManager {
                 activeSessionId = event.sessionId
             }
         }
+        if let origin = event.origin {
+            session.origin = origin
+        }
         session.handleEvent(event)
 
         // Claude Code moved on, so any prompt still on screen is obsolete.
