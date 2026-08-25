@@ -135,10 +135,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(openSettingsWindow), name: .ccaniOpenSettings, object: nil)
         // Listen for reposition notification from settings view
         NotificationCenter.default.addObserver(self, selector: #selector(repositionPanel), name: .ccaniRepositionPanel, object: nil)
+        // Fullscreen / level changes from settings
+        NotificationCenter.default.addObserver(self, selector: #selector(applyPanelBehavior), name: .ccaniPanelBehaviorChanged, object: nil)
     }
 
     @objc private func openSettingsWindow() {
         settingsController.showSettings(updateChecker: updateChecker)
+    }
+
+    @objc private func applyPanelBehavior() {
+        panel?.applyWindowBehavior()
     }
 
     @objc private func repositionPanel() {
@@ -215,6 +221,7 @@ extension Notification.Name {
     static let ccaniClickOutside = Notification.Name("ccaniClickOutside")
     static let ccaniOpenSettings = Notification.Name("ccaniOpenSettings")
     static let ccaniRepositionPanel = Notification.Name("ccaniRepositionPanel")
+    static let ccaniPanelBehaviorChanged = Notification.Name("ccaniPanelBehaviorChanged")
 }
 
 @main

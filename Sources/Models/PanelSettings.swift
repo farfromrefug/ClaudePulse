@@ -92,6 +92,15 @@ class PanelSettings {
         }
     }
 
+    /// Float above fullscreen apps (video, Xcode fullscreen...). Off by default;
+    /// permission prompts still force themselves to the front when they appear.
+    var showOverFullscreen: Bool {
+        didSet {
+            UserDefaults.standard.set(showOverFullscreen, forKey: "showOverFullscreen")
+            NotificationCenter.default.post(name: .ccaniPanelBehaviorChanged, object: nil)
+        }
+    }
+
     var soundOnComplete: Bool {
         didSet { UserDefaults.standard.set(soundOnComplete, forKey: "soundOnComplete") }
     }
@@ -119,5 +128,6 @@ class PanelSettings {
         self.showDockIcon = UserDefaults.standard.bool(forKey: "showDockIcon")
         self.soundOnComplete = UserDefaults.standard.bool(forKey: "soundOnComplete")
         self.soundName = UserDefaults.standard.string(forKey: "soundName") ?? "Glass"
+        self.showOverFullscreen = UserDefaults.standard.bool(forKey: "showOverFullscreen")
     }
 }

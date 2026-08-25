@@ -17,7 +17,6 @@ class DynamicIslandPanel: NSPanel {
 
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         level = .floating
         isOpaque = false
         backgroundColor = .clear
@@ -26,7 +25,24 @@ class DynamicIslandPanel: NSPanel {
         titlebarAppearsTransparent = true
 
         self.contentView = contentView
+        applyWindowBehavior()
         repositionForCurrentSettings()
+    }
+
+    /// Whether the panel joins fullscreen spaces, and how high it floats.
+    func applyWindowBehavior() {
+        let overFullscreen = PanelSettings.shared.showOverFullscreen
+        if overFullscreen {
+            collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            level = .floating
+        } else {
+            // Without .fullScreenAuxiliary the panel stays out of fullscreen spaces.
+            collectionBehavior = [.canJoinAllSpaces, .stationary]
+            level = .floating
+        }
+        if isVisible {
+            orderFrontRegardless()
+        }
     }
 
     func repositionForCurrentSettings() {

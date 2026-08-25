@@ -128,6 +128,14 @@ struct SettingsView: View {
                     }
                 }
 
+                // Show over fullscreen
+                SettingsToggleRow(
+                    title: "Show Over Fullscreen",
+                    subtitle: "Float above fullscreen apps like video players",
+                    isOn: Binding(get: { settings.showOverFullscreen },
+                                  set: { settings.showOverFullscreen = $0 })
+                )
+
                 // Show Dock Icon toggle
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -456,5 +464,46 @@ class SettingsWindowController {
         NSApp.activate(ignoringOtherApps: true)
 
         self.panel = panel
+    }
+}
+
+struct SettingsToggleRow: View {
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+    private let settings = PanelSettings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isOn.toggle()
+                }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(isOn ? settings.accentColor : .white.opacity(0.15))
+                        .frame(width: 34, height: 20)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 16, height: 16)
+                        .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
+                        .offset(x: isOn ? 7 : -7)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
