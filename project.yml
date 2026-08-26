@@ -15,8 +15,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    MARKETING_VERSION: "0.2.7"
-    CURRENT_PROJECT_VERSION: "0.2.7"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "0.3.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES
@@ -58,7 +58,7 @@ targets:
           NSAllowsLocalNetworking: true
         NSAppleEventsUsageDescription: "ClaudePulse focuses your terminal window when you click a session."
         SUFeedURL: https://raw.githubusercontent.com/farfromrefug/ClaudePulse/main/appcast.xml
-        SUPublicEDKey: rdWqg6DxZAeugDCqV5pjjUUJck1xNni80UGLubN5wCI=
+        SUPublicEDKey: fJQYaqymBmQMF2v5Pv4O61mpDX23Ub7oG5WZNY75hYc=
 
   ClaudePulseTests:
     type: bundle.unit-test

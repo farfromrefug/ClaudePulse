@@ -121,6 +121,51 @@ Run tests from either toolchain:
 swift test
 ```
 
+### Releasing
+
+Releases are cut by the **Release** workflow in the Actions tab. Pick how far
+the version moves — `auto` reads the commits since the last tag, so a `feat:`
+makes it a minor release, a `!` or a `BREAKING CHANGE` trailer a major one, and
+anything else a patch — and the run reports what each of patch, minor and major
+would have given before it commits to one. Tick **dry run** to see the version,
+the notes and the built DMG as a workflow artifact without tagging or
+publishing anything.
+
+A real run writes the version into `project.yml`, builds the app, signs it with
+the Developer ID certificate, notarizes and staples it, signs the DMG for
+Sparkle, adds the release to `appcast.xml`, tags `v<version>` and publishes the
+GitHub release with the DMG attached and the generated notes.
+
+Every secret is optional and the run degrades rather than stopping: with no
+certificate the app is signed ad-hoc, with no notarization credentials it ships
+un-notarized, and with no Sparkle key `appcast.xml` is left alone so no
+installed copy is offered an update it cannot verify. What the run could not do
+is said in the job summary and at the top of the release notes.
+
+The secrets:
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12` | Developer ID Application certificate, exported as `.p12` and base64-encoded (`base64 -i cert.p12 \| pbcopy`) |
+| `MACOS_CERTIFICATE_PASSWORD` | The password that `.p12` was exported with |
+| `APPLE_ID` | Apple ID used for notarization |
+| `APPLE_TEAM_ID` | The team the certificate belongs to |
+| `APPLE_APP_PASSWORD` | App-specific password for that Apple ID |
+| `SPARKLE_ED_PRIVATE_KEY` | Sparkle's EdDSA private key, the one whose public half is `SUPublicEDKey` |
+
+The same build runs locally, reading the version from `project.yml` and picking
+up whichever Developer ID is in your keychain:
+
+```bash
+NOTARY_PROFILE=ccani ./scripts/build-dmg.sh
+```
+
+`SKIP_NOTARIZE=1` builds a signed but un-notarized DMG for testing, and
+`SIGN_IDENTITY=-` (or `ALLOW_ADHOC_SIGN=1` with no Developer ID in the
+keychain) builds one signed by nobody — Apple silicon will not run a binary
+with no signature at all, so ad-hoc is as unsigned as a build gets.
+`VERSION` and `FEED_REPO` override what the script works out on its own.
+
 ## How It Works
 
 Pulse installs `type: "http"` hooks into `~/.claude/settings.json` pointing at
