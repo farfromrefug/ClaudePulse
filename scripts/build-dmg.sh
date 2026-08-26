@@ -16,6 +16,11 @@ default_repo="$(git remote get-url origin 2>/dev/null \
 FEED_REPO="${FEED_REPO:-${GITHUB_REPOSITORY:-${default_repo:-tzangms/ClaudePulse}}}"
 FEED_URL="${FEED_URL:-https://raw.githubusercontent.com/${FEED_REPO}/main/appcast.xml}"
 
+# The public half of the Sparkle signing key, so the built app only accepts
+# updates signed with the matching private key. project.yml holds the one the
+# Xcode build uses; reading it here keeps the two from drifting apart.
+PUBLIC_ED_KEY="${PUBLIC_ED_KEY:-$(awk '/SUPublicEDKey:/ { print $2; exit }' project.yml)}"
+
 # Signing identity: whichever Developer ID is in the keychain unless named.
 SIGN_IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -F'"' '/Developer ID Application/ { print $2; exit }')}"
@@ -86,7 +91,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
     <key>SUFeedURL</key>
     <string>${FEED_URL}</string>
     <key>SUPublicEDKey</key>
-    <string>rdWqg6DxZAeugDCqV5pjjUUJck1xNni80UGLubN5wCI=</string>
+    <string>${PUBLIC_ED_KEY}</string>
 </dict>
 </plist>
 PLIST

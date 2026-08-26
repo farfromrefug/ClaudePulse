@@ -58,7 +58,7 @@ targets:
           NSAllowsLocalNetworking: true
         NSAppleEventsUsageDescription: "ClaudePulse focuses your terminal window when you click a session."
         SUFeedURL: https://raw.githubusercontent.com/farfromrefug/ClaudePulse/main/appcast.xml
-        SUPublicEDKey: rdWqg6DxZAeugDCqV5pjjUUJck1xNni80UGLubN5wCI=
+        SUPublicEDKey: fJQYaqymBmQMF2v5Pv4O61mpDX23Ub7oG5WZNY75hYc=
 
   ClaudePulseTests:
     type: bundle.unit-test
