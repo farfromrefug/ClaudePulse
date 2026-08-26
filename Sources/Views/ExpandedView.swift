@@ -22,7 +22,7 @@ struct ExpandedDetailView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .frame(width: 280 * settings.textSize.scale)
+        .frame(width: settings.contentWidth)
     }
 }
 
@@ -42,17 +42,26 @@ struct SessionRow: View {
                 .frame(width: 6, height: 6)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text(session.projectName)
+                    Text(session.displayName)
                         .font(.system(size: 11 * s, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(.white.opacity(isSelected ? 1.0 : 0.6))
                         .lineLimit(1)
+                        .truncationMode(.tail)
                     if !rowStateLabel.isEmpty {
                         Text(rowStateLabel)
                             .font(.system(size: 9 * s, weight: .medium))
                             .foregroundStyle(rowStateColor.opacity(0.7))
                     }
                 }
-                if let prompt = session.lastPrompt {
+                // Under a session title, the folder is what tells two sessions
+                // of the same name apart; otherwise the prompt is more useful.
+                if let folder = session.subtitleName {
+                    Text(folder)
+                        .font(.system(size: 9 * s))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else if let prompt = session.lastPrompt {
                     Text(prompt)
                         .font(.system(size: 10 * s))
                         .foregroundStyle(.white.opacity(0.3))
@@ -75,7 +84,7 @@ struct SessionRow: View {
                 )
                 .help("Context window — \(context.summary)")
             }
-            if session.isActive, panelVisible {
+            if session.isActive, panelVisible, settings.showSessionDuration {
                 TimelineView(.periodic(from: .now, by: 3)) { _ in
                     Text(session.formattedTime)
                         .font(.system(size: 10 * s, design: .monospaced))
@@ -101,6 +110,7 @@ struct SessionRow: View {
     /// it makes a stale or unexpected working directory obvious.
     private var rowHelp: String {
         var lines = [session.cwd ?? "(unknown directory)"]
+        if session.subtitleName != nil, let prompt = session.lastPrompt { lines.append(prompt) }
         if let tool = session.lastToolName { lines.append("last tool: \(tool)") }
         lines.append("session \(session.id.prefix(8))")
         return lines.joined(separator: "\n")

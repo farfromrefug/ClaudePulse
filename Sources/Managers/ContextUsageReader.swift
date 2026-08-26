@@ -10,10 +10,16 @@ enum ContextUsageReader {
 
     /// Transcripts reach tens of megabytes, and the reading we want is at the
     /// very end, so only the tail is read.
-    static let tailBytes = 512 * 1024
+    static let tailBytes = TranscriptTail.defaultBytes
 
     static func read(transcriptPath: String) -> ContextWindow? {
-        guard let usage = lastAssistantUsage(path: transcriptPath) else { return nil }
+        read(lines: TranscriptTail.lines(path: transcriptPath))
+    }
+
+    /// Same reading from a tail that has already been read, so a refresh can
+    /// pull the context and the session title out of one pass over the file.
+    static func read(lines: [Data]) -> ContextWindow? {
+        guard let usage = lastAssistantUsage(in: lines) else { return nil }
         let used = usage.inputTokens + usage.cacheCreationTokens + usage.cacheReadTokens
         guard used > 0 else { return nil }
         return ContextWindow(usedTokens: used, size: windowSize(model: usage.model, used: used))
@@ -44,21 +50,9 @@ enum ContextUsageReader {
     /// The last assistant turn's usage is the current context: each request
     /// re-sends the whole conversation, so its input counts describe the window
     /// as it stands — including after a compaction, which shrinks it again.
-    private static func lastAssistantUsage(path: String) -> Usage? {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { try? handle.close() }
-
-        guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
-        let offset = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
-        try? handle.seek(toOffset: offset)
-        guard let data = try? handle.readToEnd(), !data.isEmpty else { return nil }
-
-        var lines = data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
-        // A tail read almost always starts mid-line; that fragment is not JSON.
-        if offset > 0, !lines.isEmpty { lines.removeFirst() }
-
+    private static func lastAssistantUsage(in lines: [Data]) -> Usage? {
         for line in lines.reversed() {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+            guard let json = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                   json["type"] as? String == "assistant",
                   let message = json["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }

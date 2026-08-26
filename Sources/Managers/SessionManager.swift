@@ -122,6 +122,9 @@ class SessionManager {
         }
 
         sessions[event.sessionId]?.state = .waitingForUser
+        // The prompt offers to hand the decision back to the terminal, which
+        // only makes sense for sessions that have one.
+        sessions[event.sessionId]?.resolveClaudeDesktopIfNeeded()
         pendingPermissions.append(permission)
 
         let timer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
