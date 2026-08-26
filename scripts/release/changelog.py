@@ -33,6 +33,9 @@ SKIP_SUBJECTS = re.compile(r"^(chore\(release\)|release):|^Merge branch ", re.IG
 
 CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<breaking>!)?:\s*(?P<summary>.+)$")
 PR_SUFFIX = re.compile(r"\s*\(#(?P<number>\d+)\)\s*$")
+# A trailer on a line of its own. Prose that merely names it — a commit
+# explaining what the marker does, say — is not a breaking change.
+BREAKING_TRAILER = re.compile(r"^BREAKING[ -]CHANGE:", re.MULTILINE)
 
 
 def git(*args: str) -> str:
@@ -103,7 +106,7 @@ def build(rev_range: str) -> tuple[dict[str, list[str]], list[str]]:
         if number:
             entry += f" (#{number})"
         grouped.setdefault(section, []).append(entry)
-        if marked or "BREAKING CHANGE" in body:
+        if marked or BREAKING_TRAILER.search(body):
             breaking.append(entry)
 
     return grouped, breaking

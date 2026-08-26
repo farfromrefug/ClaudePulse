@@ -34,9 +34,11 @@ subjects="$(git log --no-merges --pretty=format:'%s' $range || true)"
 bodies="$(git log --no-merges --pretty=format:'%b' $range || true)"
 
 # Conventional commits: a `!` marker or a BREAKING CHANGE trailer breaks the
-# API, a `feat` adds to it, anything else is a fix or housekeeping.
+# API, a `feat` adds to it, anything else is a fix or housekeeping. The trailer
+# has to start its own line — a commit message that merely mentions the words
+# is describing them, not declaring one.
 suggested="patch"
-if grep -qE '^[a-z]+(\([^)]*\))?!:' <<< "$subjects" || grep -q 'BREAKING CHANGE' <<< "$bodies"; then
+if grep -qE '^[a-z]+(\([^)]*\))?!:' <<< "$subjects" || grep -qE '^BREAKING[ -]CHANGE:' <<< "$bodies"; then
     suggested="major"
 elif grep -qE '^feat(\([^)]*\))?:' <<< "$subjects"; then
     suggested="minor"
