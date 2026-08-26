@@ -66,6 +66,61 @@ enum TextSize: String, CaseIterable {
 }
 
 
+/// How much of a permission prompt is shown while it waits for an answer.
+/// The one-line summary is enough for a familiar command; deciding on a long
+/// diff, a URL or a full plan needs the whole thing.
+enum ActionDetail: String, CaseIterable {
+    case compact
+    case standard
+    case full
+
+    var displayName: String {
+        switch self {
+        case .compact: return "S"
+        case .standard: return "M"
+        case .full: return "L"
+        }
+    }
+
+    /// Lines of detail shown before truncation.
+    var lineLimit: Int {
+        switch self {
+        case .compact: return 2
+        case .standard: return 6
+        case .full: return 24
+        }
+    }
+
+    /// Room the panel reserves at the bottom screen positions, where its frame
+    /// is fixed: a fuller prompt needs a taller frame to sit in.
+    var bottomPanelHeight: CGFloat {
+        switch self {
+        case .compact: return 400
+        case .standard: return 480
+        case .full: return 700
+        }
+    }
+
+    /// Whether the whole tool input is worth showing rather than the single
+    /// field that usually carries the meaning.
+    var showsWholeInput: Bool { self == .full }
+}
+
+/// What a session row calls itself.
+enum SessionLabelStyle: String, CaseIterable {
+    /// The working directory's folder name — what Pulse has always shown.
+    case project
+    /// Claude Code's own session title, with the folder underneath.
+    case title
+
+    var displayName: String {
+        switch self {
+        case .project: return "Repo"
+        case .title: return "Session"
+        }
+    }
+}
+
 /// Where clicking a session takes you.
 enum RevealTarget: String, CaseIterable {
     /// Focus the terminal the session actually runs in; fall back to Claude
@@ -129,6 +184,42 @@ class PanelSettings {
         didSet { UserDefaults.standard.set(textSize.rawValue, forKey: "textSize") }
     }
 
+    /// Panel width in points. S/M/L scales the type; this scales the panel,
+    /// so a long command or a wide session list can be read without changing
+    /// the font size.
+    var panelWidth: Double {
+        didSet {
+            UserDefaults.standard.set(panelWidth, forKey: "panelWidth")
+            NotificationCenter.default.post(name: .ccaniRepositionPanel, object: nil)
+        }
+    }
+
+    /// How much of a waiting permission prompt is shown.
+    var actionDetail: ActionDetail {
+        didSet {
+            UserDefaults.standard.set(actionDetail.rawValue, forKey: "actionDetail")
+            // The bottom positions size their frame from this.
+            NotificationCenter.default.post(name: .ccaniRepositionPanel, object: nil)
+        }
+    }
+
+    /// Whether rows and the capsule count how long a session has been running.
+    var showSessionDuration: Bool {
+        didSet { UserDefaults.standard.set(showSessionDuration, forKey: "showSessionDuration") }
+    }
+
+    /// Whether session rows lead with Claude Code's session title or the folder.
+    var sessionLabelStyle: SessionLabelStyle {
+        didSet { UserDefaults.standard.set(sessionLabelStyle.rawValue, forKey: "sessionLabelStyle") }
+    }
+
+    /// Whether the account-wide limits are shown in the panel at all. Pulse can
+    /// read them from Claude for Desktop's records without owning the status
+    /// line, so this has to gate the display rather than the status line alone.
+    var showAccountUsage: Bool {
+        didSet { UserDefaults.standard.set(showAccountUsage, forKey: "showAccountUsage") }
+    }
+
     var showDockIcon: Bool {
         didSet {
             UserDefaults.standard.set(showDockIcon, forKey: "showDockIcon")
@@ -182,7 +273,17 @@ class PanelSettings {
         "Purr", "Sosumi", "Submarine", "Tink", "Basso"
     ]
 
+    static let defaultPanelWidth: Double = 280
+    static let minimumPanelWidth: Double = 240
+    static let maximumPanelWidth: Double = 720
+
     var accentColor: Color { accentTheme.color }
+
+    /// Width the panel's content lays out at, clamped to what the panel can
+    /// actually be given a stored value from an older build or another screen.
+    var contentWidth: CGFloat {
+        CGFloat(min(max(panelWidth, Self.minimumPanelWidth), Self.maximumPanelWidth))
+    }
 
     private init() {
         let posRaw = UserDefaults.standard.string(forKey: "panelPosition") ?? PanelPosition.topCenter.rawValue
@@ -192,6 +293,17 @@ class PanelSettings {
         self.accentTheme = AccentTheme(rawValue: themeRaw) ?? .purple
         let sizeRaw = UserDefaults.standard.string(forKey: "textSize") ?? TextSize.medium.rawValue
         self.textSize = TextSize(rawValue: sizeRaw) ?? .medium
+        let storedWidth = UserDefaults.standard.double(forKey: "panelWidth")
+        self.panelWidth = storedWidth > 0 ? storedWidth : Self.defaultPanelWidth
+        let detailRaw = UserDefaults.standard.string(forKey: "actionDetail") ?? ActionDetail.standard.rawValue
+        self.actionDetail = ActionDetail(rawValue: detailRaw) ?? .standard
+        let labelRaw = UserDefaults.standard.string(forKey: "sessionLabelStyle") ?? SessionLabelStyle.project.rawValue
+        self.sessionLabelStyle = SessionLabelStyle(rawValue: labelRaw) ?? .project
+        // Absent means on for both: Pulse showed these before the switches existed.
+        self.showSessionDuration = UserDefaults.standard.object(forKey: "showSessionDuration") == nil
+            || UserDefaults.standard.bool(forKey: "showSessionDuration")
+        self.showAccountUsage = UserDefaults.standard.object(forKey: "showAccountUsage") == nil
+            || UserDefaults.standard.bool(forKey: "showAccountUsage")
         self.showDockIcon = UserDefaults.standard.bool(forKey: "showDockIcon")
         self.statusLinePromptDismissed = UserDefaults.standard.bool(forKey: "statusLinePromptDismissed")
         self.soundOnComplete = UserDefaults.standard.bool(forKey: "soundOnComplete")

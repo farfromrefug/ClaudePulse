@@ -202,11 +202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel() {
         guard let panel = panel else { return }
-        if panel.isVisible {
-            panel.orderOut(nil)
-        } else {
-            panel.orderFrontRegardless()
-        }
+        panel.setUserVisible(!panel.isVisible)
     }
 
     @objc private func togglePinExpanded(_ sender: NSMenuItem) {
@@ -463,6 +459,7 @@ struct DynamicIslandContent: View {
             PermissionListView(
                 permissions: permissions,
                 sessionName: { sessionManager.sessions[$0]?.projectName ?? "session" },
+                offersTerminalHandoff: { !(sessionManager.sessions[$0]?.isClaudeDesktop ?? false) },
                 onDecision: { permission, decision in
                     sessionManager.respond(to: permission, decision: decision)
                 },
@@ -493,7 +490,7 @@ struct DynamicIslandContent: View {
     private var actionButtons: some View {
         let s = settings.textSize.scale
         return HStack(spacing: 0) {
-            if let usage = sessionManager.usage {
+            if settings.showAccountUsage, let usage = sessionManager.usage {
                 GlobalUsageView(usage: usage)
                     .padding(.leading, 4)
             }

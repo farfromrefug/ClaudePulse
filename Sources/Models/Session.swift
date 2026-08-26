@@ -17,12 +17,18 @@ class Session: Identifiable {
     /// How full the context window is, from the status line when it has
     /// reported and from the transcript otherwise.
     var contextWindow: ContextWindow?
+    /// The name Claude Code gives this session, read from its transcript.
+    var title: String?
+    /// True when Claude for Desktop is running this session, so there is no
+    /// terminal prompt to hand a permission decision back to.
+    var isClaudeDesktop = false
 
     /// The status line reports the real window size; a transcript can only be
     /// used to infer it, so a size learned there is never overwritten.
     private var hasAuthoritativeWindowSize = false
     private var lastContextRefresh = Date.distantPast
     private var contextRefreshInFlight = false
+    private var checkedClaudeDesktop = false
 
     init(id: String, cwd: String? = nil) {
         self.id = id
@@ -94,13 +100,33 @@ class Session: Identifiable {
         contextRefreshInFlight = true
         lastContextRefresh = now
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let reading = ContextUsageReader.read(transcriptPath: path)
+            // One tail read serves both readings — the transcript is large and
+            // the title sits in the same last few hundred kilobytes.
+            let lines = TranscriptTail.lines(path: path)
+            let reading = ContextUsageReader.read(lines: lines)
+            let title = SessionTitleReader.title(in: lines)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.contextRefreshInFlight = false
+                if let title, title != self.title { self.title = title }
                 guard let reading else { return }
                 self.applyTranscriptContext(reading)
             }
+        }
+    }
+
+    /// Works out once whether Claude for Desktop is running this session.
+    ///
+    /// A session started from a terminal names it in its hook headers
+    /// (`$TERM_PROGRAM`); only the ones that name none are worth the scan of
+    /// the desktop app's records.
+    func resolveClaudeDesktopIfNeeded() {
+        guard !checkedClaudeDesktop, origin?.termProgram == nil else { return }
+        checkedClaudeDesktop = true
+        let sessionId = id
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let isDesktop = ClaudeDesktopSessions.liveTwin(of: sessionId) != nil
+            DispatchQueue.main.async { self?.isClaudeDesktop = isDesktop }
         }
     }
 
@@ -117,6 +143,23 @@ class Session: Identifiable {
             return (cwd as NSString).lastPathComponent
         }
         return String(id.prefix(8))
+    }
+
+    /// What a row leads with. A session that has not been named yet falls back
+    /// to the folder, so the label never goes blank while Claude picks a title.
+    var displayName: String {
+        switch PanelSettings.shared.sessionLabelStyle {
+        case .project: return projectName
+        case .title: return title ?? projectName
+        }
+    }
+
+    /// The folder, shown under the title — dropped when it would only repeat
+    /// the line above it.
+    var subtitleName: String? {
+        guard PanelSettings.shared.sessionLabelStyle == .title else { return nil }
+        guard let title, title != projectName else { return nil }
+        return projectName
     }
 
     var isActive: Bool {

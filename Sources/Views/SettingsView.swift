@@ -15,10 +15,15 @@ struct SettingsView: View {
     @State private var colorHover: AccentTheme?
     @State private var usageInstalled = StatusLineConfigurator().isInstalled()
     @State private var sizeHover: TextSize?
+    @State private var detailHover: ActionDetail?
+    @State private var labelHover: SessionLabelStyle?
 
     /// Says what the toggle actually does to the user's own configuration,
     /// since it takes over `statusLine` in `~/.claude/settings.json`.
     private var usageSubtitle: String {
+        if !settings.showAccountUsage {
+            return "Account limits are hidden from the panel"
+        }
         if usageInstalled {
             return "Pulse owns the status line and reads your limits from it"
         }
@@ -28,15 +33,20 @@ struct SettingsView: View {
         return "Uses the status line to read your 5-hour and weekly limits"
     }
 
+    /// Turning account usage off has to hide the panel's limits as well as give
+    /// the status line back: Pulse can also read the limits from Claude for
+    /// Desktop's own records, so uninstalling alone would leave them on screen.
     private func toggleUsageTracking() {
         let configurator = StatusLineConfigurator()
+        let turningOn = !settings.showAccountUsage
         do {
-            if usageInstalled {
-                try configurator.uninstall()
-            } else {
+            if turningOn {
                 try configurator.install(port: HookServer.currentPort ?? 19_280)
+            } else if usageInstalled {
+                try configurator.uninstall()
             }
             usageInstalled = configurator.isInstalled()
+            settings.showAccountUsage = turningOn
         } catch {
             let alert = NSAlert()
             alert.messageText = "Could not change the status line"
@@ -182,13 +192,13 @@ struct SettingsView: View {
                     } label: {
                         ZStack {
                             Capsule()
-                                .fill(usageInstalled ? settings.accentColor : .white.opacity(0.15))
+                                .fill(settings.showAccountUsage ? settings.accentColor : .white.opacity(0.15))
                                 .frame(width: 34, height: 20)
                             Circle()
                                 .fill(.white)
                                 .frame(width: 16, height: 16)
                                 .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
-                                .offset(x: usageInstalled ? 7 : -7)
+                                .offset(x: settings.showAccountUsage ? 7 : -7)
                         }
                     }
                     .buttonStyle(.plain)
@@ -280,6 +290,14 @@ struct SettingsView: View {
                         .frame(width: 110)
                     }
                 }
+
+                // Session duration
+                SettingsToggleRow(
+                    title: "Session Duration",
+                    subtitle: "Count how long a session has been running",
+                    isOn: Binding(get: { settings.showSessionDuration },
+                                  set: { settings.showSessionDuration = $0 })
+                )
 
                 // Show over fullscreen
                 SettingsToggleRow(
@@ -422,6 +440,51 @@ struct SettingsView: View {
                     }
                 }
 
+                // Panel width — S/M/L scales the type, this scales the panel,
+                // so a wide command or a long session title can be read.
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Width")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.45))
+                        Spacer()
+                        Text("\(Int(settings.panelWidth)) pt")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { settings.panelWidth },
+                            set: { settings.panelWidth = ($0 / 10).rounded() * 10 }
+                        ),
+                        in: PanelSettings.minimumPanelWidth...PanelSettings.maximumPanelWidth
+                    )
+                    .controlSize(.small)
+                    .tint(settings.accentColor)
+                }
+
+                // How much of a waiting permission prompt is shown
+                SettingsSegmentedRow(
+                    title: "Action Detail",
+                    subtitle: "How much a prompt shows while it waits",
+                    options: ActionDetail.allCases,
+                    label: { $0.displayName },
+                    selection: Binding(get: { settings.actionDetail },
+                                       set: { settings.actionDetail = $0 }),
+                    hovered: $detailHover
+                )
+
+                // What a session row leads with
+                SettingsSegmentedRow(
+                    title: "Session Name",
+                    subtitle: "Claude's session title, or the folder",
+                    options: SessionLabelStyle.allCases,
+                    label: { $0.displayName },
+                    selection: Binding(get: { settings.sessionLabelStyle },
+                                       set: { settings.sessionLabelStyle = $0 }),
+                    hovered: $labelHover
+                )
+
                 // Divider
                 Rectangle()
                     .fill(.white.opacity(0.08))
@@ -534,9 +597,9 @@ struct SettingsView: View {
                 }
             }
             .padding(16)
+            .modifier(ScrollingSheetBody())
         }
         .frame(width: 280)
-        .fixedSize()
         .background(
             .regularMaterial,
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -584,6 +647,73 @@ struct SettingsToggleRow: View {
                 }
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+
+/// Lets the settings scroll. There are enough settings now that the sheet would
+/// otherwise run off the bottom of a laptop screen at full height.
+struct ScrollingSheetBody: ViewModifier {
+    /// Tall enough to show most of the sheet at once, short enough to leave the
+    /// window on screen next to the menu bar and the Dock.
+    static let maximumHeight: CGFloat = 620
+
+    func body(content: Content) -> some View {
+        ScrollView(.vertical) { content }
+            .frame(maxHeight: Self.maximumHeight)
+            .scrollBounceBehavior(.basedOnSize)
+    }
+}
+
+/// The small segmented control the settings sheet uses for short choices.
+struct SettingsSegmentedRow<Value: Hashable>: View {
+    let title: String
+    var subtitle: String?
+    let options: [Value]
+    let label: (Value) -> String
+    @Binding var selection: Value
+    @Binding var hovered: Value?
+    private let settings = PanelSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 4) {
+                ForEach(options, id: \.self) { option in
+                    let isSelected = selection == option
+                    let isHovered = hovered == option
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { selection = option }
+                    } label: {
+                        Text(label(option))
+                            .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? .white : .white.opacity(isHovered ? 0.7 : 0.45))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(isSelected ? .white.opacity(0.12) : .white.opacity(isHovered ? 0.08 : 0.05))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { h in
+                        withAnimation(.easeInOut(duration: 0.1)) { hovered = h ? option : nil }
+                    }
+                }
+            }
         }
     }
 }

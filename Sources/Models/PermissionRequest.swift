@@ -101,6 +101,25 @@ final class PendingPermission: Identifiable {
         return toolInput.displayText
     }
 
+    /// Everything the tool was asked to do, for when the one-line summary is
+    /// not enough to decide on — a long command, a whole plan, a diff.
+    var fullDetail: String {
+        guard let toolInput, case .object(let fields) = toolInput else { return detail }
+        return fields.sorted { $0.key < $1.key }
+            .map { key, value in
+                let text = value.displayText
+                return text.contains("\n") ? "\(key):\n\(text)" : "\(key): \(text)"
+            }
+            .joined(separator: "\n")
+    }
+
+    /// True when the expanded detail says more than the summary line already does.
+    var hasMoreDetail: Bool {
+        let summary = detail
+        let full = fullDetail
+        return full != summary && !full.isEmpty
+    }
+
     func respond(_ decision: PermissionDecision) {
         guard !answered else { return }
         answered = true
