@@ -19,9 +19,19 @@ class HookServer {
         .homeDirectoryForCurrentUser
         .appendingPathComponent(".ccani/port")
 
+    /// `-portFile <path>` gives a development build its own port file, so it
+    /// runs beside a released Pulse instead of bowing out to it as a second
+    /// instance — the same reason `-disableHookSetup` exists.
+    static var configuredPortFileURL: URL {
+        guard let path = UserDefaults.standard.string(forKey: "portFile"), !path.isEmpty else {
+            return defaultPortFileURL
+        }
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
     init(
         portRange: ClosedRange<UInt16> = HookServer.portRange,
-        portFileURL: URL = HookServer.defaultPortFileURL,
+        portFileURL: URL = HookServer.configuredPortFileURL,
         onEvent: @escaping (HookEvent, HookConnection) -> Void,
         onStatusLine: @escaping (StatusLinePayload) -> Void = { _ in }
     ) {

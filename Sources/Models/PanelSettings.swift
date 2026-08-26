@@ -91,8 +91,10 @@ enum ActionDetail: String, CaseIterable {
         }
     }
 
-    /// Room the panel reserves at the bottom screen positions, where its frame
-    /// is fixed: a fuller prompt needs a taller frame to sit in.
+    /// The height a bottom-positioned panel keeps even when its content is
+    /// shorter. The spare room is transparent and clicks fall through it, and
+    /// it is what lets a prompt open and close without resizing the window at
+    /// all — which is both smoother and what keeps the capsule still.
     var bottomPanelHeight: CGFloat {
         switch self {
         case .compact: return 400
@@ -198,7 +200,7 @@ class PanelSettings {
     var actionDetail: ActionDetail {
         didSet {
             UserDefaults.standard.set(actionDetail.rawValue, forKey: "actionDetail")
-            // The bottom positions size their frame from this.
+            // The bottom positions keep a frame at least this tall.
             NotificationCenter.default.post(name: .ccaniRepositionPanel, object: nil)
         }
     }

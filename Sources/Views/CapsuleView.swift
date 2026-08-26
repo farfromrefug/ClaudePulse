@@ -39,8 +39,16 @@ struct CapsuleView: View {
     let session: Session?
     let sessionCount: Int
     let activeCount: Int
+    /// Actions waiting for an answer. The badge is what tells the user they are
+    /// still there after the panel has been collapsed on top of them.
+    var waitingActionCount: Int = 0
+    var isExpanded: Bool = false
+    /// Collapses the panel — or opens it again — without answering anything.
+    var onToggleExpanded: (() -> Void)?
     private let settings = PanelSettings.shared
     @Environment(\.panelVisible) private var panelVisible
+
+    @State private var chevronHovered = false
 
     var body: some View {
         let s = settings.textSize.scale
@@ -76,6 +84,26 @@ struct CapsuleView: View {
 
             Spacer()
 
+            // Only while collapsed: expanded, the prompts speak for themselves
+            // and the capsule already carries the session's own waiting glyph.
+            if waitingActionCount > 0 && !isExpanded {
+                HStack(spacing: 2) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 9 * s, weight: .semibold))
+                    if waitingActionCount > 1 {
+                        Text("\(waitingActionCount)")
+                            .font(.system(size: 10 * s, weight: .bold, design: .rounded))
+                    }
+                }
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.orange.opacity(0.18), in: Capsule())
+                .help(waitingActionCount == 1
+                      ? "1 action waiting for you"
+                      : "\(waitingActionCount) actions waiting for you")
+            }
+
             if let session = session, session.isActive, panelVisible, settings.showSessionDuration {
                 TimelineView(.periodic(from: .now, by: 3)) { _ in
                     Text(session.formattedTime)
@@ -104,9 +132,36 @@ struct CapsuleView: View {
                 .padding(.vertical, 2)
                 .background(.white.opacity(0.1), in: Capsule())
             }
+
+            if let onToggleExpanded, isExpanded || waitingActionCount > 0 {
+                Button(action: onToggleExpanded) {
+                    Image(systemName: collapseChevron)
+                        .font(.system(size: 10 * s, weight: .semibold))
+                        .foregroundStyle(.white.opacity(chevronHovered ? 0.9 : 0.4))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.12)) { chevronHovered = hovering }
+                }
+                .help(isExpanded
+                      ? "Collapse — anything waiting keeps waiting"
+                      : "Show what is waiting")
+            }
         }
         .padding(.horizontal, 14)
         .frame(width: settings.contentWidth, height: 36 * s)
+    }
+
+    /// Points at where the expanded panel lives, so the arrow reads as "put it
+    /// back" from either screen position.
+    private var collapseChevron: String {
+        let expandsUpward = settings.position != .topCenter
+        if isExpanded {
+            return expandsUpward ? "chevron.down" : "chevron.up"
+        }
+        return expandsUpward ? "chevron.up" : "chevron.down"
     }
 
     @ViewBuilder

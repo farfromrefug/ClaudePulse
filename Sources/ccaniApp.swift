@@ -36,10 +36,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let contentView = DynamicIslandContent(sessionManager: sessionManager)
         let hostView = SizeTrackingHostingView(rootView: contentView)
         hostView.sizingOptions = [.intrinsicContentSize]
+        // The panel lives in a screen corner, where the display's rounded
+        // corners and the Dock keep changing the safe area. Letting SwiftUI
+        // react to that turns a repositioned panel into a resize into another
+        // reposition — a loop AppKit ends by throwing.
+        hostView.safeAreaRegions = []
 
         let panel = DynamicIslandPanel(contentView: hostView)
         hostView.onSizeChange = { [weak panel] size in
-            panel?.updateFrameForContentSize(size)
+            panel?.resizeToContent(size)
         }
         panel.orderFrontRegardless()
         self.panel = panel
@@ -302,6 +307,17 @@ struct DynamicIslandContent: View {
     @State private var pinHovered = false
     @State private var isPanelVisible = true
 
+    /// Actions the user has put away for later. They keep waiting — and keep
+    /// counting down — behind the capsule, which badges how many there are.
+    /// Ids rather than a flag, so an action that arrives afterwards still opens
+    /// the panel instead of waiting silently.
+    @State private var dismissedActionIds: Set<String> = []
+
+    /// Set when the user collapses the panel from the chevron, which leaves the
+    /// cursor sitting on the capsule: without this the hover that is still in
+    /// progress reopens the panel immediately.
+    @State private var hoverExpandSuppressed = false
+
     /// Delay before a hover counts, so sweeping past the capsule does nothing.
     private let hoverIntentDelay: TimeInterval = 0.1
     private let expandAnimationDuration: TimeInterval = 0.35
@@ -314,8 +330,21 @@ struct DynamicIslandContent: View {
         sessionManager.pendingPermissions
     }
 
+    /// Actions still asking to be seen — the pending ones the user has not put
+    /// away.
+    private var undismissedActions: [PendingPermission] {
+        permissions.filter { !dismissedActionIds.contains($0.id) }
+    }
+
     private var shouldExpand: Bool {
-        settings.pinExpanded || isExpanded || !permissions.isEmpty
+        settings.pinExpanded || isExpanded || !undismissedActions.isEmpty
+    }
+
+    /// The tallest the expanded section may be before it starts scrolling:
+    /// whatever the screen has left once the capsule takes its row. Without
+    /// this a long prompt grows the panel past the screen edge.
+    private var maxExpandedHeight: CGFloat {
+        max(120, DynamicIslandPanel.maxPanelHeight() - 44 * settings.textSize.scale)
     }
 
     private var cornerRadius: CGFloat {
@@ -337,14 +366,21 @@ struct DynamicIslandContent: View {
             // --- Visible content (hover target) ---
             VStack(spacing: 0) {
                 if shouldExpand && expandsUpward {
-                    expandedContent
+                    scrollingExpandedContent
                         .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottom)))
                 }
 
                 CapsuleView(
                     session: sessionManager.activeSession,
                     sessionCount: sessionManager.sessions.count,
-                    activeCount: sessionManager.activeSessionCount
+                    activeCount: sessionManager.activeSessionCount,
+                    waitingActionCount: permissions.count,
+                    isExpanded: shouldExpand,
+                    // The chevron is the way out of a panel an action forced
+                    // open, which the hover state machine cannot close. It is a
+                    // button rather than a tap on the capsule itself, so the
+                    // capsule stays the panel's drag handle.
+                    onToggleExpanded: toggleFromCapsule
                 )
                 .onHover { hovering in
                     capsuleHovered = hovering
@@ -352,7 +388,7 @@ struct DynamicIslandContent: View {
                 }
 
                 if shouldExpand && !expandsUpward {
-                    expandedContent
+                    scrollingExpandedContent
                         .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
                 }
             }
@@ -369,8 +405,11 @@ struct DynamicIslandContent: View {
                 // — but staying inside it keeps it open.
                 if hovering {
                     cancelCollapse()
-                } else if !capsuleHovered {
-                    scheduleCollapse()
+                } else {
+                    // The cursor is off the panel altogether, so a hover that
+                    // comes back later is a fresh one and may expand again.
+                    hoverExpandSuppressed = false
+                    if !capsuleHovered { scheduleCollapse() }
                 }
             }
         }
@@ -385,6 +424,11 @@ struct DynamicIslandContent: View {
                 collapse()
             }
         }
+        // Forget answered actions, so their ids cannot keep a later one — which
+        // may reuse nothing but the session — from opening the panel.
+        .onChange(of: permissions.map(\.id)) { _, ids in
+            dismissedActionIds.formIntersection(ids)
+        }
     }
 
     // MARK: - Hover state machine
@@ -392,11 +436,12 @@ struct DynamicIslandContent: View {
     private func scheduleExpand() {
         hoverIntent?.cancel()
         cancelCollapse()
-        guard !isExpanded else { return }
+        guard !isExpanded, !hoverExpandSuppressed else { return }
         let work = DispatchWorkItem {
             // Still on the capsule after the delay, so this is intent rather
-            // than a cursor passing through.
-            guard capsuleHovered else { return }
+            // than a cursor passing through — and not the hover the user just
+            // collapsed out from under.
+            guard capsuleHovered, !hoverExpandSuppressed else { return }
             withAnimation(.spring(response: expandAnimationDuration, dampingFraction: 0.8)) {
                 isExpanded = true
             }
@@ -428,6 +473,34 @@ struct DynamicIslandContent: View {
         collapseIntent = nil
     }
 
+    /// A click on the capsule: put the panel away, or bring it back.
+    ///
+    /// Waiting actions expand the panel by themselves, so collapsing has to
+    /// note which ones the user has seen — otherwise the panel springs open
+    /// again the moment the animation ends.
+    private func toggleFromCapsule() {
+        if shouldExpand {
+            hoverIntent?.cancel()
+            hoverIntent = nil
+            cancelCollapse()
+            hoverExpandSuppressed = true
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                dismissedActionIds.formUnion(permissions.map(\.id))
+                // A pinned panel has to be unpinned to close at all, and the
+                // click plainly means "close".
+                if settings.pinExpanded { settings.pinExpanded = false }
+                isExpanded = false
+            }
+        } else {
+            dismissedActionIds.removeAll()
+            hoverExpandSuppressed = false
+            cancelCollapse()
+            withAnimation(.spring(response: expandAnimationDuration, dampingFraction: 0.8)) {
+                isExpanded = true
+            }
+        }
+    }
+
     private func collapse() {
         hoverIntent?.cancel()
         hoverIntent = nil
@@ -439,6 +512,17 @@ struct DynamicIslandContent: View {
     }
 
     // MARK: - Content
+
+    /// The expanded section, scrolling once it outgrows the screen.
+    private var scrollingExpandedContent: some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                expandedContent
+            }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: maxExpandedHeight)
+    }
 
     @ViewBuilder
     private var expandedContent: some View {
