@@ -1,8 +1,8 @@
 name: Release
 
 # Cuts a release: works out the next version, writes the notes from the
-# commits behind it, builds a signed and notarized DMG, adds it to the Sparkle
-# feed, tags it and publishes it.
+# commits behind it, builds the DMG, adds it to the Sparkle feed, tags it and
+# publishes it.
 #
 # Run it from the Actions tab. "auto" reads the commits since the last tag —
 # a `feat:` makes it a minor release, a `!` or a BREAKING CHANGE trailer a
@@ -11,7 +11,13 @@ name: Release
 # or major explicitly to overrule it, or tick "dry run" to see the version,
 # the notes and the built DMG without publishing anything.
 #
-# Secrets it needs:
+# Every secret below is optional, and the run degrades rather than stopping:
+# without a certificate the app is signed ad-hoc, without notarization
+# credentials it ships un-notarized, without the Sparkle key the feed is left
+# alone so no installed copy is offered an update it cannot verify. What the
+# run could not do is said in the job summary and at the top of the release
+# notes, so a half-signed build is never mistaken for a full one.
+#
 #   MACOS_CERTIFICATE_P12       Developer ID Application certificate, .p12,
 #                               base64-encoded (`base64 -i cert.p12 | pbcopy`)
 #   MACOS_CERTIFICATE_PASSWORD  the password that .p12 was exported with
@@ -71,12 +77,65 @@ jobs:
             exit 1
           fi
 
+      - name: Work out what this run can sign with
+        id: can
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          cert=false
+          notarize=false
+          sparkle=false
+          if [ -n "$CERTIFICATE_P12" ]; then cert=true; fi
+          # Notarization is Apple checking a Developer ID signature, so it is
+          # only on the table when there is one.
+          if [ "$cert" = true ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            notarize=true
+          fi
+          if [ -n "$SPARKLE_ED_PRIVATE_KEY" ]; then sparkle=true; fi
+
+          {
+            echo "cert=$cert"
+            echo "notarize=$notarize"
+            echo "sparkle=$sparkle"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Developer ID certificate: $cert"
+          echo "Notarization credentials:  $notarize"
+          echo "Sparkle signing key:       $sparkle"
+          if [ "$cert" = false ]; then
+            echo "::warning::No Developer ID — the app will be signed ad-hoc and Gatekeeper will refuse it."
+          elif [ "$notarize" = false ]; then
+            echo "::warning::No notarization credentials — the DMG will ship un-notarized."
+          fi
+          if [ "$sparkle" = false ]; then
+            echo "::warning::No Sparkle key — appcast.xml will be left alone, so installed copies will not be offered this update."
+          fi
+
       - name: Write the release notes
-        id: notes
         run: |
           range="${{ steps.version.outputs.range }}"
           ./scripts/release/changelog.py --range "$range" --format markdown > "$RUNNER_TEMP/notes.md"
           ./scripts/release/changelog.py --range "$range" --format html > "$RUNNER_TEMP/notes.html"
+
+          # A build that Gatekeeper will stop, or that no installed copy will
+          # be offered, has to say so where the person downloading it looks.
+          caveats=""
+          if [ "${{ steps.can.outputs.cert }}" != "true" ]; then
+            caveats+=$'> **This build is not signed with a Developer ID.** macOS will refuse to open it until you remove the quarantine flag: `xattr -dr com.apple.quarantine /Applications/ClaudePulse.app`.\n\n'
+          elif [ "${{ steps.can.outputs.notarize }}" != "true" ]; then
+            caveats+=$'> **This build is signed but not notarized.** macOS will warn the first time it opens; right-click the app and choose Open to get past it.\n\n'
+          fi
+          if [ "${{ steps.can.outputs.sparkle }}" != "true" ]; then
+            caveats+=$'> **Not published to the update feed.** Existing installations will not be offered this version; download it here instead.\n\n'
+          fi
+          if [ -n "$caveats" ]; then
+            printf '%s' "$caveats" | cat - "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/notes.full.md"
+            mv "$RUNNER_TEMP/notes.full.md" "$RUNNER_TEMP/notes.md"
+          fi
           cat "$RUNNER_TEMP/notes.md"
 
       - name: Say what this release would be
@@ -95,6 +154,12 @@ jobs:
             echo "**${{ steps.version.outputs.suggested }}**, releasing as a"
             echo "**${{ steps.version.outputs.bump }}** bump from"
             echo "${{ steps.version.outputs.commits }} commits."
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Developer ID signing | ${{ steps.can.outputs.cert == 'true' && 'yes' || 'no — ad-hoc' }} |"
+            echo "| Notarized | ${{ steps.can.outputs.notarize == 'true' && 'yes' || 'no' }} |"
+            echo "| Added to the update feed | ${{ steps.can.outputs.sparkle == 'true' && 'yes' || 'no' }} |"
             if [ "${{ inputs.dry_run }}" = "true" ]; then
               echo
               echo "> Dry run — nothing will be published."
@@ -107,17 +172,17 @@ jobs:
         run: swift test
 
       - name: Set the version
-        run: ./scripts/release/set-version.sh "${{ steps.version.outputs.next }}"
+        run: |
+          version="${{ steps.version.outputs.next }}"
+          ./scripts/release/set-version.sh "$version"
+          echo "DMG=build/ClaudePulse-$version.dmg" >> "$GITHUB_ENV"
 
       - name: Import the Developer ID certificate
+        if: steps.can.outputs.cert == 'true'
         env:
           CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -z "$CERTIFICATE_P12" ]; then
-            echo "::error::MACOS_CERTIFICATE_P12 is not set."
-            exit 1
-          fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
           password="$(openssl rand -base64 24)"
 
@@ -141,9 +206,12 @@ jobs:
           echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
           echo "Signing as $identity"
 
-      - name: Build, sign and notarize the DMG
+      - name: Build the DMG
         env:
           VERSION: ${{ steps.version.outputs.next }}
+          # Without a certificate the build signs ad-hoc rather than stopping.
+          ALLOW_ADHOC_SIGN: ${{ steps.can.outputs.cert == 'true' && '0' || '1' }}
+          SKIP_NOTARIZE: ${{ steps.can.outputs.notarize == 'true' && '0' || '1' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -151,36 +219,32 @@ jobs:
 
       - name: Sign the DMG for Sparkle
         id: sparkle
+        if: steps.can.outputs.sparkle == 'true'
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
-          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
-            echo "::error::SPARKLE_ED_PRIVATE_KEY is not set — updates would not verify."
-            exit 1
-          fi
           # Sparkle ships sign_update inside the binary artifact SwiftPM fetched.
           sign_update="$(find .build/artifacts -name sign_update -type f -perm -u+x | head -n1)"
           if [ -z "$sign_update" ]; then
             echo "::error::sign_update not found in .build/artifacts."
             exit 1
           fi
-          dmg="build/ClaudePulse-${{ steps.version.outputs.next }}.dmg"
           # Prints `sparkle:edSignature="..." length="..."`.
-          attributes="$(echo "$SPARKLE_ED_PRIVATE_KEY" | "$sign_update" --ed-key-file - "$dmg")"
+          attributes="$(echo "$SPARKLE_ED_PRIVATE_KEY" | "$sign_update" --ed-key-file - "$DMG")"
           signature="$(sed -n 's/.*edSignature="\([^"]*\)".*/\1/p' <<< "$attributes")"
           if [ -z "$signature" ]; then
             echo "::error::sign_update produced no signature."
             exit 1
           fi
           echo "signature=$signature" >> "$GITHUB_OUTPUT"
-          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
 
       - name: Add the release to the appcast
+        if: steps.can.outputs.sparkle == 'true'
         run: |
           version="${{ steps.version.outputs.next }}"
           ./scripts/release/update-appcast.py \
             --version "$version" \
-            --dmg "${{ steps.sparkle.outputs.dmg }}" \
+            --dmg "$DMG" \
             --url "https://github.com/${{ github.repository }}/releases/download/v$version/ClaudePulse-$version.dmg" \
             --signature "${{ steps.sparkle.outputs.signature }}" \
             --notes-file "$RUNNER_TEMP/notes.html"
@@ -192,7 +256,7 @@ jobs:
         with:
           name: ClaudePulse-${{ steps.version.outputs.next }}-dry-run
           path: |
-            ${{ steps.sparkle.outputs.dmg }}
+            ${{ env.DMG }}
             appcast.xml
           retention-days: 7
 
@@ -202,6 +266,7 @@ jobs:
           version="${{ steps.version.outputs.next }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # appcast.xml is only in this commit when the feed was updated.
           git add project.yml appcast.xml
           git commit -m "release: v$version"
           git tag -a "v$version" -m "ClaudePulse $version"
@@ -215,7 +280,7 @@ jobs:
         run: |
           version="${{ steps.version.outputs.next }}"
           gh release create "v$version" \
-            "${{ steps.sparkle.outputs.dmg }}" \
+            "$DMG" \
             --title "ClaudePulse $version" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             ${{ inputs.prerelease && '--prerelease' || '' }}

@@ -136,7 +136,13 @@ the Developer ID certificate, notarizes and staples it, signs the DMG for
 Sparkle, adds the release to `appcast.xml`, tags `v<version>` and publishes the
 GitHub release with the DMG attached and the generated notes.
 
-It needs these repository secrets:
+Every secret is optional and the run degrades rather than stopping: with no
+certificate the app is signed ad-hoc, with no notarization credentials it ships
+un-notarized, and with no Sparkle key `appcast.xml` is left alone so no
+installed copy is offered an update it cannot verify. What the run could not do
+is said in the job summary and at the top of the release notes.
+
+The secrets:
 
 | Secret | What it is |
 | --- | --- |
@@ -155,8 +161,10 @@ NOTARY_PROFILE=ccani ./scripts/build-dmg.sh
 ```
 
 `SKIP_NOTARIZE=1` builds a signed but un-notarized DMG for testing, and
-`SIGN_IDENTITY`, `VERSION` and `FEED_REPO` override what the script works out
-on its own.
+`SIGN_IDENTITY=-` (or `ALLOW_ADHOC_SIGN=1` with no Developer ID in the
+keychain) builds one signed by nobody — Apple silicon will not run a binary
+with no signature at all, so ad-hoc is as unsigned as a build gets.
+`VERSION` and `FEED_REPO` override what the script works out on its own.
 
 ## How It Works
 
