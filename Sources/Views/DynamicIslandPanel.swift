@@ -2,13 +2,23 @@ import SwiftUI
 import AppKit
 
 class DynamicIslandPanel: NSPanel {
-    /// Height for bottom positions — large enough for any expanded content.
-    /// The SwiftUI content is bottom-aligned within this fixed frame,
-    /// eliminating the frame-resize ↔ hover race condition. It grows with the
-    /// action-detail setting, which is what makes the content tall.
-    static var bottomFixedHeight: CGFloat {
-        PanelSettings.shared.actionDetail.bottomPanelHeight
+    /// Margin kept between the panel and the screen edges.
+    static let screenMargin: CGFloat = 12
+
+    /// The tallest a panel may be on the current screen.
+    static func maxPanelHeight(on screen: NSScreen? = NSScreen.main) -> CGFloat {
+        guard let screen else { return 600 }
+        return screen.visibleFrame.height - screenMargin * 2
     }
+
+    /// Set while the panel places itself, so `setFrame` takes the new frame as
+    /// given instead of anchoring it to the old one.
+    private var isPlacingItself = false
+
+    /// The latest content size waiting to be applied, and whether a turn of the
+    /// run loop has already been booked to apply it.
+    private var pendingContentSize: CGSize?
+    private var resizeScheduled = false
 
     /// True while the active space belongs to a fullscreen app. The panel joins
     /// every space so it follows the user around, and that includes fullscreen
@@ -166,52 +176,119 @@ class DynamicIslandPanel: NSPanel {
     func repositionForCurrentSettings() {
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.visibleFrame
-        let margin: CGFloat = 12
-        let contentWidth = PanelSettings.shared.contentWidth
+        let margin = Self.screenMargin
+        let width = PanelSettings.shared.contentWidth
+        let height = min(max(frame.height, minimumHeight), Self.maxPanelHeight(on: screen))
 
-        let newFrame: NSRect
+        let origin: NSPoint
         switch PanelSettings.shared.position {
         case .topCenter:
-            let width = contentWidth
-            let origin = NSPoint(
-                x: screenFrame.midX - width / 2,
-                y: screenFrame.maxY - frame.height - 8
-            )
-            newFrame = NSRect(origin: origin, size: CGSize(width: width, height: frame.height))
-        case .bottomLeft, .bottomRight:
-            let width = contentWidth
-            let x = PanelSettings.shared.position == .bottomLeft
-                ? screenFrame.minX + margin
-                : screenFrame.maxX - width - margin
-            newFrame = NSRect(
-                x: x,
-                y: screenFrame.minY + margin,
-                width: width,
-                height: Self.bottomFixedHeight
-            )
+            origin = NSPoint(x: screenFrame.midX - width / 2, y: screenFrame.maxY - height - 8)
+        case .bottomLeft:
+            origin = NSPoint(x: screenFrame.minX + margin, y: screenFrame.minY + margin)
+        case .bottomRight:
+            origin = NSPoint(x: screenFrame.maxX - width - margin, y: screenFrame.minY + margin)
         }
-        setFrame(newFrame, display: true)
+
+        isPlacingItself = true
+        setFrame(NSRect(origin: origin, size: CGSize(width: width, height: height)), display: true)
+        isPlacingItself = false
     }
 
-    func updateFrameForContentSize(_ contentSize: CGSize) {
-        // Bottom positions use a fixed frame — no updates needed.
-        guard PanelSettings.shared.position == .topCenter else { return }
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
-        let newWidth = ceil(max(contentSize.width, PanelSettings.shared.contentWidth))
-        let newHeight = ceil(contentSize.height)
-
-        let topY = frame.origin.y + frame.size.height
-        let newOrigin = NSPoint(
-            x: screenFrame.midX - newWidth / 2,
-            y: topY - newHeight
-        )
-
-        let newFrame = NSRect(origin: newOrigin, size: CGSize(width: newWidth, height: newHeight))
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.animator().setFrame(newFrame, display: true)
+    /// The least a bottom-positioned panel measures. Content shorter than this
+    /// opens and closes inside a frame that never moves, which is what keeps
+    /// the capsule — and the chevron on it — still under the cursor.
+    private var minimumHeight: CGFloat {
+        switch PanelSettings.shared.position {
+        case .topCenter: return 0
+        case .bottomLeft, .bottomRight: return PanelSettings.shared.actionDetail.bottomPanelHeight
         }
+    }
+
+    /// Follows the SwiftUI content's size, because the window is the only thing
+    /// that clips it. Which way it grows is the anchoring's business.
+    ///
+    /// A SwiftUI animation reports a new size on every frame it draws, and
+    /// resizing a window from inside its own layout pass as fast as that is
+    /// what AppKit refuses to do — so the sizes are coalesced and only the last
+    /// one of a run loop turn is applied.
+    func resizeToContent(_ contentSize: CGSize) {
+        pendingContentSize = contentSize
+        guard !resizeScheduled else { return }
+        resizeScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.resizeScheduled = false
+            guard let size = self.pendingContentSize else { return }
+            self.pendingContentSize = nil
+            self.applyContentSize(size)
+        }
+    }
+
+    private func applyContentSize(_ contentSize: CGSize) {
+        guard let screen = NSScreen.main else { return }
+        let width = ceil(max(contentSize.width, PanelSettings.shared.contentWidth))
+        let height = min(max(ceil(contentSize.height), minimumHeight), Self.maxPanelHeight(on: screen))
+        guard width != frame.width || height != frame.height else { return }
+
+        // The origin is left as it is: `setFrame` anchors it to the edge this
+        // position grows from.
+        let target = NSRect(origin: frame.origin, size: CGSize(width: width, height: height))
+        setFrame(target, display: false)
+    }
+
+    /// Keeps a resized panel on the edge it belongs to.
+    ///
+    /// The hosting view grows the window to fit its content and AppKit anchors
+    /// that growth at the *top left*, which walks a bottom-positioned panel off
+    /// the bottom of the screen — the taller the prompt, the further off. Every
+    /// resize goes through here, whoever asked for it, so the panel keeps its
+    /// own edge and stays on the screen instead.
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        guard !isPlacingItself, let screen = NSScreen.main else {
+            super.setFrame(frameRect, display: flag)
+            return
+        }
+        super.setFrame(
+            Self.anchoredFrame(
+                frameRect,
+                previous: frame,
+                screenFrame: screen.visibleFrame,
+                position: PanelSettings.shared.position
+            ),
+            display: flag
+        )
+    }
+
+    /// Where a resized panel belongs — the geometry alone, so it can be
+    /// reasoned about (and tested) without a window server.
+    ///
+    /// The panel keeps the edge it grows from: its top at the top position, its
+    /// bottom at the bottom ones, and the side it was last left on. A move that
+    /// does not change the size — the user dragging the panel — is left alone.
+    static func anchoredFrame(
+        _ proposed: NSRect,
+        previous: NSRect,
+        screenFrame: NSRect,
+        position: PanelPosition
+    ) -> NSRect {
+        guard proposed.size != previous.size else { return proposed }
+
+        var rect = proposed
+        switch position {
+        case .topCenter:
+            rect.origin.x = previous.midX - rect.width / 2
+            rect.origin.y = previous.maxY - rect.height
+        case .bottomLeft:
+            rect.origin.x = previous.minX
+            rect.origin.y = previous.minY
+        case .bottomRight:
+            rect.origin.x = previous.maxX - rect.width
+            rect.origin.y = previous.minY
+        }
+
+        rect.origin.x = min(max(rect.minX, screenFrame.minX), max(screenFrame.minX, screenFrame.maxX - rect.width))
+        rect.origin.y = min(max(rect.minY, screenFrame.minY), max(screenFrame.minY, screenFrame.maxY - rect.height))
+        return rect
     }
 }

@@ -103,12 +103,16 @@ final class ActionDetailTests: XCTestCase {
         XCTAssertEqual(permission.fullDetail, "file_path: /repo/Package.swift")
     }
 
-    /// Bottom positions size their frame up front, so a fuller prompt needs a
-    /// taller one to sit in.
+    /// Bottom positions keep a frame at least this tall, so a fuller prompt
+    /// needs a taller one to open into without moving the window.
     func testLargerDetailAsksForATallerPanel() {
         XCTAssertGreaterThan(ActionDetail.full.bottomPanelHeight, ActionDetail.standard.bottomPanelHeight)
         XCTAssertGreaterThan(ActionDetail.standard.bottomPanelHeight, ActionDetail.compact.bottomPanelHeight)
-        XCTAssertGreaterThan(ActionDetail.full.lineLimit, ActionDetail.compact.lineLimit)
+    }
+
+    func testLargerDetailShowsMoreOfAPrompt() {
+        XCTAssertGreaterThan(ActionDetail.full.lineLimit, ActionDetail.standard.lineLimit)
+        XCTAssertGreaterThan(ActionDetail.standard.lineLimit, ActionDetail.compact.lineLimit)
         XCTAssertTrue(ActionDetail.full.showsWholeInput)
         XCTAssertFalse(ActionDetail.compact.showsWholeInput)
     }
