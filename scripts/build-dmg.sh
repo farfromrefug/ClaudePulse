@@ -120,10 +120,15 @@ else
     echo "==> Signing app bundle as ${SIGN_IDENTITY}..."
 fi
 
-# A trusted timestamp needs a real identity; an ad-hoc signature cannot have one.
+# An ad-hoc signature has neither a team nor a trusted timestamp, and the
+# hardened runtime it cannot have either: the runtime turns on library
+# validation, which then refuses to load a bundled framework whose team does
+# not match the app's — and with ad-hoc neither has one, so the app dies on
+# launch unable to load its own copy of Sparkle. The hardened runtime only
+# exists to make notarization possible, which an ad-hoc build never is.
 sign() {
     if [ "${adhoc}" = "1" ]; then
-        codesign --force --options runtime --sign - "$1"
+        codesign --force --sign - "$1"
     else
         codesign --force --options runtime --timestamp --sign "${SIGN_IDENTITY}" "$1"
     fi
