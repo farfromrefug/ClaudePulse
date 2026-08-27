@@ -43,6 +43,9 @@ struct CapsuleView: View {
     /// still there after the panel has been collapsed on top of them.
     var waitingActionCount: Int = 0
     var isExpanded: Bool = false
+    /// Set while the panel is closed because the user closed it, which is the
+    /// one case where the chevron has to offer the way back in.
+    var offersExpandChevron: Bool = false
     /// Collapses the panel — or opens it again — without answering anything.
     var onToggleExpanded: (() -> Void)?
     private let settings = PanelSettings.shared
@@ -53,8 +56,13 @@ struct CapsuleView: View {
     var body: some View {
         let s = settings.textSize.scale
         HStack(spacing: 8) {
-            claudeIconView
+            // The leading icon was a decoration that spent 16 points saying
+            // "Pulse" to someone already looking at Pulse. It carries the
+            // session's state instead, which buys the name the width the
+            // state glyph used to take on the right.
+            SessionStateGlyph(state: session?.state ?? .idle, scale: s)
                 .frame(width: 16, height: 16)
+                .help(statusText)
 
             if let session = session {
                 VStack(alignment: .leading, spacing: 0) {
@@ -71,11 +79,6 @@ struct CapsuleView: View {
                             .truncationMode(.middle)
                     }
                 }
-
-                // A word like "Working..." costs more width than the state is
-                // worth while the panel is collapsed; the glyph says the same.
-                SessionStateGlyph(state: session.state, scale: s)
-                    .help(statusText)
             } else {
                 Text("Pulse")
                     .font(.system(size: 12 * s, weight: .medium))
@@ -133,7 +136,7 @@ struct CapsuleView: View {
                 .background(.white.opacity(0.1), in: Capsule())
             }
 
-            if let onToggleExpanded, isExpanded || waitingActionCount > 0 {
+            if let onToggleExpanded, isExpanded || waitingActionCount > 0 || offersExpandChevron {
                 Button(action: onToggleExpanded) {
                     Image(systemName: collapseChevron)
                         .font(.system(size: 10 * s, weight: .semibold))
@@ -164,21 +167,6 @@ struct CapsuleView: View {
         return expandsUpward ? "chevron.up" : "chevron.down"
     }
 
-    @ViewBuilder
-    private var claudeIconView: some View {
-        Image(systemName: "sparkle")
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(statusColor)
-    }
-
-    private var statusColor: Color {
-        switch session?.state ?? .idle {
-        case .idle: return .gray
-        case .working: return PanelSettings.shared.accentColor
-        case .waitingForUser: return .orange
-        case .stale: return .gray.opacity(0.5)
-        }
-    }
 
     private var statusText: String {
         switch session?.state ?? .idle {
