@@ -273,6 +273,10 @@ class SessionManager {
         }
     }
 
+    /// How long a working session may go without a hook before Pulse asks the
+    /// transcript whether it is really finished.
+    static let quietBeforeIdle: TimeInterval = 30
+
     private func checkStaleness() {
         guard !sessions.isEmpty else { return }
         let now = Date()
@@ -287,8 +291,17 @@ class SessionManager {
                 }
             } else if elapsed > 600 { // 10 min — mark stale
                 session.state = .stale
-            } else if session.isActive && elapsed > 30 { // 30 sec with no event — back to idle
-                session.state = .idle
+            } else if session.isActive && elapsed > Self.quietBeforeIdle {
+                // Hooks mark the edges of a turn, not the middle. A tool that
+                // takes minutes — a build, a test run, a long agent — sends
+                // nothing while it works, and calling that idle was wrong.
+                // The transcript and the tool Claude is still inside say
+                // otherwise, and a session that says so keeps its turn.
+                if session.looksBusy(now: now, quietFor: Self.quietBeforeIdle) {
+                    session.lastEventTime = now
+                } else {
+                    session.state = .idle
+                }
             }
         }
     }
