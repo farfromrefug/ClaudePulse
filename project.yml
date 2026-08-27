@@ -53,6 +53,10 @@ targets:
         CFBundleIconFile: AppIcon
         CFBundlePackageType: APPL
         LSUIElement: true
+        # An accessory app with only panels reads as "no windows open", which
+        # makes macOS terminate it after a few idle minutes.
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
         LSMinimumSystemVersion: "14.0"
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

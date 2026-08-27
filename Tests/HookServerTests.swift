@@ -148,4 +148,73 @@ final class HookServerTests: XCTestCase {
         XCTAssertEqual(received?.sessionId, "big")
         XCTAssertEqual(received?.toolInput?["content"]?.stringValue?.count, 300_000)
     }
+
+    /// Claude Code hangs up on a hook it has stopped waiting for — a timeout,
+    /// a session ending, a ^C. Writing the answer to that dead socket used to
+    /// raise SIGPIPE and kill Pulse outright, leaving no crash report to
+    /// explain it.
+    ///
+    /// The signal itself cannot be provoked from here — XCTest's host process
+    /// already ignores SIGPIPE, so an unfixed build would survive this test
+    /// while the app it ships dies. What is checked instead is the thing that
+    /// keeps the app alive: the connection carries SO_NOSIGPIPE, so the write
+    /// returns EPIPE, and answering a socket nobody is listening to leaves the
+    /// server running.
+    func testAnsweringAConnectionTheClientHungUpOnDoesNotKillTheProcess() throws {
+        var held: HookConnection?
+        let arrived = expectation(description: "hook arrived")
+        // The liveness check at the end sends a second hook through the same
+        // handler; only the first one is being waited for.
+        arrived.assertForOverFulfill = false
+        let lock = NSLock()
+        let port = try startServer { _, connection in
+            lock.lock()
+            let isFirst = held == nil
+            if isFirst { held = connection }
+            lock.unlock()
+            // The first hook is the one abandoned mid-flight; the one after it
+            // is the liveness check and wants a normal answer.
+            if isFirst { arrived.fulfill() } else { connection.respondEmpty() }
+        }
+
+        // A raw socket, so the request can be abandoned mid-flight the way a
+        // cancelled hook abandons its own.
+        let client = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(client, 0)
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { raw in
+                connect(client, raw, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        XCTAssertEqual(connected, 0)
+
+        let body = #"{"session_id":"s","hook_event_name":"PreToolUse","tool_name":"Bash"}"#
+        let request = """
+        POST /hook HTTP/1.1\r
+        Host: 127.0.0.1\r
+        Content-Type: application/json\r
+        Content-Length: \(body.utf8.count)\r
+        \r
+        \(body)
+        """
+        _ = request.withCString { send(client, $0, strlen($0), 0) }
+        wait(for: [arrived], timeout: 5)
+
+        XCTAssertTrue(try XCTUnwrap(held).suppressesSIGPIPE,
+                      "the accepted socket must report EPIPE rather than signalling")
+
+        // The client gives up before the answer comes, exactly as a hook that
+        // has timed out does.
+        close(client)
+        Thread.sleep(forTimeInterval: 0.2)
+        held?.respondEmpty()
+
+        // Still alive, and still answering — which is the whole point.
+        let response = try post(port: port, body: #"{"session_id":"s2","hook_event_name":"Stop"}"#)
+        XCTAssertNotNil(response)
+    }
 }

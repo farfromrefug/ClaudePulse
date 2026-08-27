@@ -9,7 +9,7 @@ final class HookConnection {
     /// Safety net so an unanswered request can never leak a file descriptor.
     static let hardTimeout: TimeInterval = 900
 
-    private let sock: Int32
+    let sock: Int32
     private let lock = NSLock()
     private var responded = false
 
@@ -18,6 +18,15 @@ final class HookConnection {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.hardTimeout) { [weak self] in
             self?.respondEmpty()
         }
+    }
+
+    /// Whether the kernel will report a write to a hung-up peer as an error
+    /// rather than raising SIGPIPE, which would kill the process.
+    var suppressesSIGPIPE: Bool {
+        var value: Int32 = 0
+        var length = socklen_t(MemoryLayout<Int32>.size)
+        guard getsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &value, &length) == 0 else { return false }
+        return value != 0
     }
 
     /// Answer with no hook output — Claude Code proceeds as if no hook ran.

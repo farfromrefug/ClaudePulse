@@ -135,6 +135,15 @@ class HookServer {
         var timeout = timeval(tv_sec: 5, tv_usec: 0)
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
+        // Writing to a socket the other end has closed raises SIGPIPE, which
+        // by default kills the process outright. Claude Code hangs up on a
+        // hook it has stopped waiting for — a timeout, a session ending, a
+        // ^C — so this is a normal thing to happen, not an exceptional one.
+        // With SO_NOSIGPIPE the write returns EPIPE instead and the response
+        // is simply dropped, which is all it was ever worth.
+        var noSignal: Int32 = 1
+        setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+
         let connection = HookConnection(sock: sock)
 
         guard let request = readRequest(sock) else {

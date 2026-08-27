@@ -22,6 +22,10 @@ class Session: Identifiable {
     /// True when Claude for Desktop is running this session, so there is no
     /// terminal prompt to hand a permission decision back to.
     var isClaudeDesktop = false
+    /// Set between a tool starting and finishing. A long build or test run
+    /// sends no hooks in between, so this is the only thing that says the
+    /// silence means "still working" rather than "finished".
+    private(set) var toolInFlight = false
 
     /// The status line reports the real window size; a transcript can only be
     /// used to infer it, so a size learned there is never overwritten.
@@ -55,11 +59,13 @@ class Session: Identifiable {
             if event.hookEventName == "SessionStart" { state = .idle }
         case "UserPromptSubmit":
             state = .working
+            toolInFlight = false
             if let prompt = event.prompt {
                 lastPrompt = prompt
             }
         case "PreToolUse", "PostToolUse", "PostToolUseFailure":
             state = .working
+            toolInFlight = event.hookEventName == "PreToolUse"
             if let toolName = event.toolName {
                 lastToolName = toolName
             }
@@ -72,6 +78,7 @@ class Session: Identifiable {
             // Claude Code notifies on "needs your permission" and "waiting for input"
             state = .waitingForUser
         case "Stop":
+            toolInFlight = false
             let wasWorking = state == .working
             state = .idle
             if wasWorking && PanelSettings.shared.soundOnComplete {
@@ -113,6 +120,25 @@ class Session: Identifiable {
                 self.applyTranscriptContext(reading)
             }
         }
+    }
+
+    /// The last time Claude wrote to this session's transcript.
+    ///
+    /// Claude Code appends to it as a turn streams, so a transcript touched a
+    /// moment ago means the session is alive even when no hook has fired: the
+    /// hooks only mark the edges of a turn, and the middle of a long one is
+    /// silent.
+    func transcriptModifiedAt() -> Date? {
+        guard let transcriptPath else { return nil }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: transcriptPath)
+        return attributes?[.modificationDate] as? Date
+    }
+
+    /// Whether this session is still doing something, despite the silence.
+    func looksBusy(now: Date = Date(), quietFor interval: TimeInterval) -> Bool {
+        if toolInFlight { return true }
+        guard let modified = transcriptModifiedAt() else { return false }
+        return now.timeIntervalSince(modified) < interval
     }
 
     /// Works out once whether Claude for Desktop is running this session.

@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var coffeeHovered = false
     @State private var colorHover: AccentTheme?
     @State private var usageInstalled = StatusLineConfigurator().isInstalled()
+    /// The system owns this one — the user can turn the login item off in
+    /// System Settings — so it is read back after every change.
+    @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var sizeHover: TextSize?
     @State private var detailHover: ActionDetail?
     @State private var labelHover: SessionLabelStyle?
@@ -36,6 +39,21 @@ struct SettingsView: View {
     /// Turning account usage off has to hide the panel's limits as well as give
     /// the status line back: Pulse can also read the limits from Claude for
     /// Desktop's own records, so uninstalling alone would leave them on screen.
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            launchAtLogin = try LaunchAtLogin.setEnabled(enabled)
+        } catch {
+            launchAtLogin = LaunchAtLogin.isEnabled
+            let alert = NSAlert()
+            alert.messageText = enabled
+                ? "Could not start Pulse at login"
+                : "Could not stop Pulse starting at login"
+            alert.informativeText = LaunchAtLogin.explain(error)
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
     private func toggleUsageTracking() {
         let configurator = StatusLineConfigurator()
         let turningOn = !settings.showAccountUsage
@@ -289,6 +307,16 @@ struct SettingsView: View {
                         .pickerStyle(.menu)
                         .frame(width: 110)
                     }
+                }
+
+                // Start at login
+                if LaunchAtLogin.isAvailable {
+                    SettingsToggleRow(
+                        title: "Start at Login",
+                        subtitle: "Open Pulse when you log in",
+                        isOn: Binding(get: { launchAtLogin },
+                                      set: { setLaunchAtLogin($0) })
+                    )
                 }
 
                 // Session duration
