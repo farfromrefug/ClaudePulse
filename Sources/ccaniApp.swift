@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[Pulse] App launched")
+        keepRunningInTheBackground()
         NSApp.setActivationPolicy(PanelSettings.shared.showDockIcon ? .regular : .accessory)
         setupPanel()
         print("[Pulse] Panel set up")
@@ -21,6 +22,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         updateChecker.startPeriodicCheck()
         print("[Pulse] Ready")
+    }
+
+    /// The two ways Pulse was dying without leaving a crash report behind.
+    private func keepRunningInTheBackground() {
+        // A write to a socket whose peer has gone raises SIGPIPE, and the
+        // default handler kills the process. Pulse writes to hook connections
+        // Claude Code may already have hung up on, so this fired in normal
+        // use — and SIGPIPE leaves no crash report, so it looked like the app
+        // vanishing for no reason. The sockets ask for EPIPE instead
+        // (SO_NOSIGPIPE); ignoring the signal covers everything else.
+        signal(SIGPIPE, SIG_IGN)
+
+        // An accessory app whose only windows are panels reads to AppKit as an
+        // app with no windows, which invites the system to terminate it when
+        // idle. Sudden termination goes too: Pulse holds hook connections
+        // open, and a session blocked on one is left hanging if the process
+        // vanishes without running its teardown.
+        ProcessInfo.processInfo.disableAutomaticTermination(
+            "Pulse watches Claude Code sessions with no window open"
+        )
+        ProcessInfo.processInfo.disableSuddenTermination()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -318,6 +340,11 @@ struct DynamicIslandContent: View {
     /// progress reopens the panel immediately.
     @State private var hoverExpandSuppressed = false
 
+    /// Set while the panel is closed because the user closed it. The capsule
+    /// then keeps a chevron to open it again — the one case where the way back
+    /// is not obvious, since hovering is what the user just overruled.
+    @State private var manuallyCollapsed = false
+
     /// Delay before a hover counts, so sweeping past the capsule does nothing.
     private let hoverIntentDelay: TimeInterval = 0.1
     private let expandAnimationDuration: TimeInterval = 0.35
@@ -376,6 +403,7 @@ struct DynamicIslandContent: View {
                     activeCount: sessionManager.activeSessionCount,
                     waitingActionCount: permissions.count,
                     isExpanded: shouldExpand,
+                    offersExpandChevron: manuallyCollapsed,
                     // The chevron is the way out of a panel an action forced
                     // open, which the hover state machine cannot close. It is a
                     // button rather than a tap on the capsule itself, so the
@@ -444,6 +472,7 @@ struct DynamicIslandContent: View {
             guard capsuleHovered, !hoverExpandSuppressed else { return }
             withAnimation(.spring(response: expandAnimationDuration, dampingFraction: 0.8)) {
                 isExpanded = true
+                manuallyCollapsed = false
             }
         }
         hoverIntent = work
@@ -456,6 +485,12 @@ struct DynamicIslandContent: View {
     private func capsuleExited() {
         hoverIntent?.cancel()
         hoverIntent = nil
+        // Suppression exists to survive the hover the user collapsed out from
+        // under. Once the cursor is off the capsule that hover is over, and
+        // leaving the flag set is what strands the panel: the outer hover
+        // never reports leaving a panel that shrank away from the cursor, so
+        // nothing else would ever clear it.
+        hoverExpandSuppressed = false
     }
 
     /// Collapses after a grace period, so a hover that returns — because the
@@ -484,6 +519,7 @@ struct DynamicIslandContent: View {
             hoverIntent = nil
             cancelCollapse()
             hoverExpandSuppressed = true
+            manuallyCollapsed = true
             withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
                 dismissedActionIds.formUnion(permissions.map(\.id))
                 // A pinned panel has to be unpinned to close at all, and the
@@ -494,6 +530,7 @@ struct DynamicIslandContent: View {
         } else {
             dismissedActionIds.removeAll()
             hoverExpandSuppressed = false
+            manuallyCollapsed = false
             cancelCollapse()
             withAnimation(.spring(response: expandAnimationDuration, dampingFraction: 0.8)) {
                 isExpanded = true
@@ -521,6 +558,10 @@ struct DynamicIslandContent: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize)
+        // The list almost never overflows, and an indicator that appears with
+        // the panel and fades a moment later reads as a glitch. The wheel and
+        // the trackpad still scroll when there is somewhere to go.
+        .scrollIndicators(.never)
         .frame(maxHeight: maxExpandedHeight)
     }
 
