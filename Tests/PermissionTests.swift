@@ -117,6 +117,8 @@ final class PermissionTests: XCTestCase {
         let allowed = try XCTUnwrap(hook["allowedEnvVars"] as? [String])
         XCTAssertTrue(allowed.contains("TERM_PROGRAM"))
         XCTAssertTrue(allowed.contains("ITERM_SESSION_ID"))
+        XCTAssertTrue(allowed.contains("CLAUDE_CODE_ENTRYPOINT"))
+        XCTAssertTrue(allowed.contains("VSCODE_IPC_HOOK_CLI"))
     }
 
     func testPermissionTimeoutOnlyAppliesWhenControlEnabled() {
