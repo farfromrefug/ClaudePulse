@@ -22,7 +22,9 @@ struct HooksConfigurator {
         ("X-Pulse-Term-Session", "TERM_SESSION_ID"),
         ("X-Pulse-Iterm-Session", "ITERM_SESSION_ID"),
         ("X-Pulse-Wezterm-Pane", "WEZTERM_PANE"),
-        ("X-Pulse-Kitty-Window", "KITTY_WINDOW_ID")
+        ("X-Pulse-Kitty-Window", "KITTY_WINDOW_ID"),
+        ("X-Pulse-Entrypoint", "CLAUDE_CODE_ENTRYPOINT"),
+        ("X-Pulse-Vscode-Ipc", "VSCODE_IPC_HOOK_CLI")
     ]
 
     func needsSetup() -> Bool {
@@ -87,6 +89,10 @@ struct HooksConfigurator {
                     if hook["url"] as? String != expectedURL { upToDate = false }
                     let expectedTimeout = Self.timeout(for: event)
                     if (hook["timeout"] as? Double) != expectedTimeout { upToDate = false }
+                    // Hooks written before a header existed never forward it.
+                    let expected = Self.hookDefinition(port: port, event: event)
+                    if (hook["headers"] as? [String: String]) != (expected["headers"] as? [String: String]) { upToDate = false }
+                    if (hook["allowedEnvVars"] as? [String]) != (expected["allowedEnvVars"] as? [String]) { upToDate = false }
                 }
             }
         }

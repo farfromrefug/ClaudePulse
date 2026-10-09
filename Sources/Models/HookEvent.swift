@@ -8,10 +8,28 @@ struct TerminalOrigin: Equatable {
     var itermSessionId: String?
     var weztermPane: String?
     var kittyWindowId: String?
+    /// `$CLAUDE_CODE_ENTRYPOINT`: how Claude Code was started. The VS Code
+    /// extension says so here, and has no terminal of its own to report.
+    var entrypoint: String?
+    /// `$VSCODE_IPC_HOOK_CLI`: set for anything an editor spawns, and its path
+    /// names the editor (`…/Application Support/Cursor/…`).
+    var vscodeIpcHook: String?
 
     var isEmpty: Bool {
         termProgram == nil && termSessionId == nil && itermSessionId == nil
             && weztermPane == nil && kittyWindowId == nil
+            && entrypoint == nil && vscodeIpcHook == nil
+    }
+
+    /// Whether an editor in the VS Code family is what runs this session.
+    ///
+    /// Checked ahead of `$TERM_PROGRAM`, which is inherited: an editor started
+    /// from iTerm hands its extensions `iTerm.app`, and following that would
+    /// open a terminal instead of the editor window.
+    var isVSCodeFamily: Bool {
+        if vscodeIpcHook != nil { return true }
+        if entrypoint?.lowercased().contains("vscode") == true { return true }
+        return termProgram?.lowercased() == "vscode"
     }
 
     init(headers: [String: String]) {
@@ -25,6 +43,8 @@ struct TerminalOrigin: Equatable {
         itermSessionId = value("x-pulse-iterm-session")
         weztermPane = value("x-pulse-wezterm-pane")
         kittyWindowId = value("x-pulse-kitty-window")
+        entrypoint = value("x-pulse-entrypoint")
+        vscodeIpcHook = value("x-pulse-vscode-ipc")
     }
 }
 

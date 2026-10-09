@@ -60,6 +60,12 @@ enum SessionOpener {
     // MARK: - Known terminals
 
     private static func focus(origin: TerminalOrigin, cwd: String?) -> Bool {
+        // The extension's sessions report no terminal, and an editor started
+        // from one reports that terminal's name — so ask about the editor first.
+        if origin.isVSCodeFamily {
+            return openFolderInEditor(cwd: cwd, ipcHook: origin.vscodeIpcHook)
+        }
+
         let program = (origin.termProgram ?? "").lowercased()
 
         switch program {
@@ -72,9 +78,7 @@ enum SessionOpener {
             return activate(bundleId: "com.apple.Terminal")
 
         case "vscode":
-            // VS Code forks (Codium, Cursor, Windsurf) all report "vscode",
-            // so open the folder with whichever is frontmost/installed.
-            return openFolderInEditor(cwd: cwd)
+            return openFolderInEditor(cwd: cwd, ipcHook: origin.vscodeIpcHook)
 
         case "ghostty":
             return activate(bundleId: "com.mitchellh.ghostty")
@@ -184,18 +188,37 @@ enum SessionOpener {
 
     // MARK: - Fallbacks
 
-    private static func openFolderInEditor(cwd: String?) -> Bool {
+    /// VS Code and its forks (Codium, Cursor, Windsurf) all look alike from the
+    /// inside, so the editor is named by what the session can tell us, then by
+    /// whichever one is running. Opening the folder is what raises the window
+    /// that already has it open.
+    private static func openFolderInEditor(cwd: String?, ipcHook: String?) -> Bool {
         guard let cwd else { return false }
-        let candidates = [
-            "com.microsoft.VSCode",
-            "com.vscodium",
-            "com.todesktop.230313mzl4w4u92", // Cursor
-            "com.exafunction.windsurf"
-        ]
-        for bundleId in candidates where appURL(bundleId) != nil {
-            return open(path: cwd, bundleId: bundleId)
-        }
-        return false
+        let installed = editorBundleIds.filter { appURL($0) != nil }
+        let named = editorBundleId(forIpcHook: ipcHook).flatMap { installed.contains($0) ? $0 : nil }
+        let running = installed.first { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }
+        guard let bundleId = named ?? running ?? installed.first else { return false }
+        return open(path: cwd, bundleId: bundleId)
+    }
+
+    private static let editorBundleIds = [
+        "com.microsoft.VSCode",
+        "com.microsoft.VSCodeInsiders",
+        "com.vscodium",
+        "com.todesktop.230313mzl4w4u92", // Cursor
+        "com.exafunction.windsurf"
+    ]
+
+    /// The editor behind `$VSCODE_IPC_HOOK_CLI`, whose socket lives in a folder
+    /// named for the editor's own data directory.
+    static func editorBundleId(forIpcHook path: String?) -> String? {
+        guard let path = path?.lowercased() else { return nil }
+        if path.contains("/cursor/") { return "com.todesktop.230313mzl4w4u92" }
+        if path.contains("/windsurf/") { return "com.exafunction.windsurf" }
+        if path.contains("/vscodium/") { return "com.vscodium" }
+        if path.contains("/code - insiders/") { return "com.microsoft.VSCodeInsiders" }
+        if path.contains("/code/") { return "com.microsoft.VSCode" }
+        return nil
     }
 
     private static func revealWithFallback(cwd: String?, target: RevealTarget) {
