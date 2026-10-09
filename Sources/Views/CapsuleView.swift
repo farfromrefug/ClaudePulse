@@ -194,9 +194,13 @@ struct SessionStateGlyph: View {
             case .working:
                 // Dots filling left to right — the same reading as a spinner,
                 // in a glyph that costs one character of width.
-                animated(Image(systemName: "ellipsis"), effect: .variableColor.iterative)
+                steppedGlyph(interval: 0.3) { tick in WorkingDots(lit: tick % 4, scale: scale) }
             case .waitingForUser:
-                animated(Image(systemName: "hand.raised.fill"), effect: .pulse)
+                steppedGlyph(interval: 0.15) { tick in
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 11 * scale, weight: .semibold))
+                        .opacity(Self.pulseOpacities[tick % Self.pulseOpacities.count])
+                }
             case .idle:
                 Image(systemName: "circle.fill")
                     .font(.system(size: 5 * scale))
@@ -209,12 +213,28 @@ struct SessionStateGlyph: View {
         .frame(width: 14 * scale, alignment: .center)
     }
 
-    /// Symbol animation is only worth running while the panel is on screen.
+    /// One breath of the waiting hand, in the handful of steps it is drawn in.
+    private static let pulseOpacities: [Double] = [1, 0.85, 0.65, 0.45, 0.35, 0.45, 0.65, 0.85]
+
+    /// Redraws a few times a second instead of on every frame.
+    ///
+    /// A symbol effect re-renders the panel's layer at the display's refresh
+    /// rate for as long as it runs — about a quarter of a core, all day, for a
+    /// glyph a few points wide. These glyphs only ever have a few distinct
+    /// looks, so drawing each one when it changes costs the same animation and
+    /// almost nothing else. Not drawn at all while the panel is hidden.
     @ViewBuilder
-    private func animated(_ image: Image, effect: some IndefiniteSymbolEffect & SymbolEffect) -> some View {
-        image
-            .font(.system(size: 11 * scale, weight: .semibold))
-            .symbolEffect(effect, isActive: panelVisible)
+    private func steppedGlyph<Content: View>(
+        interval: TimeInterval,
+        @ViewBuilder content: @escaping (Int) -> Content
+    ) -> some View {
+        if panelVisible {
+            TimelineView(.periodic(from: Date(timeIntervalSinceReferenceDate: 0), by: interval)) { context in
+                content(Int((context.date.timeIntervalSinceReferenceDate / interval).rounded()))
+            }
+        } else {
+            content(0)
+        }
     }
 
     private var color: Color {
@@ -223,6 +243,23 @@ struct SessionStateGlyph: View {
         case .working: return settings.accentColor
         case .waitingForUser: return .orange
         case .stale: return .gray.opacity(0.5)
+        }
+    }
+}
+
+/// The working indicator: three dots that light up one after another.
+private struct WorkingDots: View {
+    /// How many dots are lit, 0 through 3.
+    let lit: Int
+    let scale: CGFloat
+
+    var body: some View {
+        HStack(spacing: 2 * scale) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .frame(width: 2.8 * scale, height: 2.8 * scale)
+                    .opacity(index < lit ? 1 : 0.25)
+            }
         }
     }
 }
