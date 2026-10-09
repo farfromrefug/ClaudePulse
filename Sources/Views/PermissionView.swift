@@ -135,7 +135,6 @@ struct PermissionRow: View {
         Text(text)
             .font(.system(size: 10 * s, design: .monospaced))
             .foregroundStyle(.white.opacity(0.5))
-            .textSelection(.enabled)
             .lineLimit(detailSize.lineLimit)
             .truncationMode(detailSize == .compact ? .middle : .tail)
             .fixedSize(horizontal: false, vertical: true)
