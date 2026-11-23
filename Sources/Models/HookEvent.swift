@@ -14,11 +14,26 @@ struct TerminalOrigin: Equatable {
     /// `$VSCODE_IPC_HOOK_CLI`: set for anything an editor spawns, and its path
     /// names the editor (`…/Application Support/Cursor/…`).
     var vscodeIpcHook: String?
+    /// `$T3CODE_THREAD_ID`: the T3 Code thread whose agent is running the
+    /// session, which is what a deep link needs to land on it.
+    var t3CodeThreadId: String?
 
     var isEmpty: Bool {
         termProgram == nil && termSessionId == nil && itermSessionId == nil
             && weztermPane == nil && kittyWindowId == nil
-            && entrypoint == nil && vscodeIpcHook == nil
+            && entrypoint == nil && vscodeIpcHook == nil && t3CodeThreadId == nil
+    }
+
+    /// Whether T3 Code is what runs this session. It embeds Claude Code
+    /// through the SDK, so there is no terminal to report either — it says so
+    /// through its entrypoint, and by the thread id it exports.
+    ///
+    /// Checked ahead of everything else for the same reason as the editors: the
+    /// app may well have been launched from a terminal that `$TERM_PROGRAM`
+    /// still names.
+    var isT3Code: Bool {
+        if t3CodeThreadId != nil { return true }
+        return entrypoint?.lowercased() == "t3-code"
     }
 
     /// Whether an editor in the VS Code family is what runs this session.
@@ -45,6 +60,7 @@ struct TerminalOrigin: Equatable {
         kittyWindowId = value("x-pulse-kitty-window")
         entrypoint = value("x-pulse-entrypoint")
         vscodeIpcHook = value("x-pulse-vscode-ipc")
+        t3CodeThreadId = value("x-pulse-t3-thread")
     }
 }
 
@@ -87,5 +103,8 @@ enum SessionState: String {
     case idle
     case working
     case waitingForUser = "waiting_for_user"
+    /// Claude has answered and nothing is running: the turn is the user's.
+    /// Cleared by whatever starts the next one.
+    case finished
     case stale
 }

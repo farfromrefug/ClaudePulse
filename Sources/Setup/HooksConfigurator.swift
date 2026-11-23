@@ -24,7 +24,8 @@ struct HooksConfigurator {
         ("X-Pulse-Wezterm-Pane", "WEZTERM_PANE"),
         ("X-Pulse-Kitty-Window", "KITTY_WINDOW_ID"),
         ("X-Pulse-Entrypoint", "CLAUDE_CODE_ENTRYPOINT"),
-        ("X-Pulse-Vscode-Ipc", "VSCODE_IPC_HOOK_CLI")
+        ("X-Pulse-Vscode-Ipc", "VSCODE_IPC_HOOK_CLI"),
+        ("X-Pulse-T3-Thread", "T3CODE_THREAD_ID")
     ]
 
     func needsSetup() -> Bool {

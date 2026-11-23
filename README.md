@@ -7,13 +7,13 @@ A macOS menu bar app that brings **Dynamic Island-inspired** real-time monitorin
 ## Features
 
 - **Dynamic Island Style** — A compact capsule UI floats above your screen, expanding on hover to show full session details
-- **Real-time Session Tracking** — Monitor multiple Claude Code sessions simultaneously with working, waiting, or idle status
+- **Real-time Session Tracking** — Monitor multiple Claude Code sessions simultaneously with working, waiting, done, or idle status
 - **Elegant Animations** — Smooth expand/collapse, pulse effects on state changes, and frosted glass materials
 - **Fully Local** — All data stays on localhost via Claude Code hooks. Nothing leaves your machine
 - **Menu Bar Integration** — Quick controls from the system menu bar: show/hide, pin expanded view, adjust position
 - **Sized to the Task** — A width slider (not just S/M/L type) and an action-detail setting, so a prompt you have to decide on can show its whole tool input
-- **Permission Prompts in the Panel** — Answer Claude Code's permission requests with Allow / Allow all / Deny without switching to the terminal (opt-in)
-- **Click to Jump Back** — Clicking a session focuses the terminal tab, pane, or editor window it is running in, or hands it to Claude for Desktop (Option-click forces that)
+- **Permission Prompts in the Panel** — Answer Claude Code's permission requests with Allow / Allow all / Deny without switching to the terminal, and pick an answer to `AskUserQuestion` from its option buttons (opt-in)
+- **Click to Jump Back** — Clicking a session focuses the terminal tab, pane, or editor window it is running in, opens the T3 Code thread, or hands it to Claude for Desktop (Option-click forces that)
 - **Push, Not Polling** — Claude Code posts events straight to the app over native HTTP hooks; no subprocesses, no file watching
 - **Zero Configuration** — Automatically sets up Claude Code hooks on first launch
 
@@ -85,6 +85,7 @@ the front regardless.
 |-------|-------------|
 | **Working** | Claude is processing |
 | **Waiting** | Waiting for user input or approval |
+| **Done** | Claude finished its turn and is waiting for your next prompt |
 | **Idle** | Session is idle |
 | **Stale** | No activity for over 10 minutes |
 
