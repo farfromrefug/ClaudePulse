@@ -8,6 +8,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updateChecker = UpdateChecker()
     private var clickMonitor: Any?
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
+    private let usagePopover = NSPopover()
+    private var menuBarUsageView: PassthroughHostingView<MenuBarUsageView>?
+    private var menuBarRefreshTimer: Timer?
+    private var popoverClickMonitor: Any?
     private let settingsController = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,6 +50,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableSuddenTermination()
     }
 
+    /// Opening Pulse again — from Finder, Spotlight or `open` — brings the panel
+    /// back, so hiding it never leaves the app unreachable.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panel?.setUserVisible(true)
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         sessionManager.releaseAllPermissions()
         server?.stop()
@@ -63,6 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // react to that turns a repositioned panel into a resize into another
         // reposition — a loop AppKit ends by throwing.
         hostView.safeAreaRegions = []
+        hostView.contextMenuProvider = { [weak self] in self?.makeMenu() }
 
         let panel = DynamicIslandPanel(contentView: hostView)
         hostView.onSizeChange = { [weak panel] size in
@@ -128,6 +141,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Pulse")
         }
 
+        let menu = makeMenu()
+
+        self.statusItem = statusItem
+        self.statusMenu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        usagePopover.behavior = .transient
+        usagePopover.delegate = self
+        applyMenuBarMode()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyMenuBarMode), name: .ccaniMenuBarChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyMenuBarMode), name: .ccaniUsageChanged, object: nil)
+        // Listen for open-settings notification from panel buttons
+        NotificationCenter.default.addObserver(self, selector: #selector(openSettingsWindow), name: .ccaniOpenSettings, object: nil)
+        // Listen for reposition notification from settings view
+        NotificationCenter.default.addObserver(self, selector: #selector(repositionPanel), name: .ccaniRepositionPanel, object: nil)
+        // Fullscreen / level changes from settings
+        NotificationCenter.default.addObserver(self, selector: #selector(applyPanelBehavior), name: .ccaniPanelBehaviorChanged, object: nil)
+        // Permission prompts raise the panel above fullscreen apps while they last
+        NotificationCenter.default.addObserver(self, selector: #selector(permissionsChanged), name: .ccaniPermissionsChanged, object: nil)
+        // Hook config depends on settings (permission timeout, control on/off)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncHooks), name: .ccaniHooksNeedSync, object: nil)
+    }
+
+    /// The menu behind the menu bar item and the panel's right click. Each
+    /// caller gets its own: a menu belongs to one place at a time.
+    private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
 
@@ -178,19 +218,107 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        statusItem.menu = menu
-        self.statusItem = statusItem
+        return menu
+    }
 
-        // Listen for open-settings notification from panel buttons
-        NotificationCenter.default.addObserver(self, selector: #selector(openSettingsWindow), name: .ccaniOpenSettings, object: nil)
-        // Listen for reposition notification from settings view
-        NotificationCenter.default.addObserver(self, selector: #selector(repositionPanel), name: .ccaniRepositionPanel, object: nil)
-        // Fullscreen / level changes from settings
-        NotificationCenter.default.addObserver(self, selector: #selector(applyPanelBehavior), name: .ccaniPanelBehaviorChanged, object: nil)
-        // Permission prompts raise the panel above fullscreen apps while they last
-        NotificationCenter.default.addObserver(self, selector: #selector(permissionsChanged), name: .ccaniPermissionsChanged, object: nil)
-        // Hook config depends on settings (permission timeout, control on/off)
-        NotificationCenter.default.addObserver(self, selector: #selector(syncHooks), name: .ccaniHooksNeedSync, object: nil)
+    /// Without the usage option the menu bar item is the plain menu it always
+    /// was. With it, the item draws the limits the way the panel does, a click
+    /// shows them in full, and the menu moves to the right button — a menu
+    /// attached to the item would answer both buttons.
+    @objc private func applyMenuBarMode() {
+        guard let statusItem, let button = statusItem.button else { return }
+        guard PanelSettings.shared.showUsageInMenuBar else {
+            removeMenuBarUsage()
+            statusItem.length = NSStatusItem.squareLength
+            button.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Pulse")
+            statusItem.menu = statusMenu
+            return
+        }
+        statusItem.menu = nil
+
+        guard let usage = sessionManager.usage?.current(),
+              usage.fiveHour != nil || usage.sevenDay != nil else {
+            // Nothing to draw yet: the plain icon, but on the click behaviour
+            // the option promises.
+            removeMenuBarUsage()
+            statusItem.length = NSStatusItem.squareLength
+            button.image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "Pulse")
+            return
+        }
+
+        button.image = nil
+        let host = menuBarUsageView ?? makeMenuBarUsageView(in: button)
+        host.rootView = MenuBarUsageView(usage: usage)
+        statusItem.length = ceil(host.fittingSize.width) + 12
+        if menuBarRefreshTimer == nil {
+            // A window can reset between two readings, and the item should say so.
+            menuBarRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                self?.applyMenuBarMode()
+            }
+        }
+        if usagePopover.isShown { showUsagePopover() }
+    }
+
+    private func makeMenuBarUsageView(in button: NSStatusBarButton) -> PassthroughHostingView<MenuBarUsageView> {
+        let host = PassthroughHostingView(rootView: MenuBarUsageView(usage: UsageSnapshot(updatedAt: Date())))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+            host.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+        ])
+        menuBarUsageView = host
+        return host
+    }
+
+    private func removeMenuBarUsage() {
+        menuBarUsageView?.removeFromSuperview()
+        menuBarUsageView = nil
+        menuBarRefreshTimer?.invalidate()
+        menuBarRefreshTimer = nil
+    }
+
+    @objc private func statusItemClicked() {
+        guard let statusItem, let button = statusItem.button else { return }
+        let isRightClick = NSApp.currentEvent?.type == .rightMouseUp
+        if isRightClick, let statusMenu {
+            usagePopover.performClose(nil)
+            // Attached only for this one click, so the left button stays free.
+            statusItem.menu = statusMenu
+            button.performClick(nil)
+            statusItem.menu = nil
+        } else if usagePopover.isShown {
+            usagePopover.performClose(nil)
+        } else {
+            showUsagePopover()
+        }
+    }
+
+    private func showUsagePopover() {
+        guard let button = statusItem?.button else { return }
+        usagePopover.contentViewController = NSHostingController(
+            rootView: UsagePopoverView(usage: sessionManager.usage)
+        )
+        usagePopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        watchForClicksOutsidePopover()
+    }
+
+    /// A transient popover closes when its app is deactivated or clicked, and
+    /// Pulse is neither: it never takes focus, so a click in another app
+    /// reaches no one here and the popover would stay until clicked once more.
+    /// Clicks elsewhere are watched for directly.
+    private func watchForClicksOutsidePopover() {
+        guard popoverClickMonitor == nil else { return }
+        popoverClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            self?.usagePopover.performClose(nil)
+        }
+    }
+
+    fileprivate func stopWatchingForClicksOutsidePopover() {
+        if let monitor = popoverClickMonitor { NSEvent.removeMonitor(monitor) }
+        popoverClickMonitor = nil
     }
 
     @objc private func openSettingsWindow() {
@@ -249,6 +377,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 }
 
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        stopWatchingForClicksOutsidePopover()
+    }
+}
+
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         // Update pin checkmark
@@ -290,6 +424,9 @@ extension Notification.Name {
     static let ccaniPermissionsChanged = Notification.Name("ccaniPermissionsChanged")
     static let ccaniPermissionRequested = Notification.Name("ccaniPermissionRequested")
     static let ccaniHooksNeedSync = Notification.Name("ccaniHooksNeedSync")
+    static let ccaniLiveUsageChanged = Notification.Name("ccaniLiveUsageChanged")
+    static let ccaniMenuBarChanged = Notification.Name("ccaniMenuBarChanged")
+    static let ccaniUsageChanged = Notification.Name("ccaniUsageChanged")
 }
 
 @main
@@ -403,6 +540,8 @@ struct DynamicIslandContent: View {
                     activeCount: sessionManager.activeSessionCount,
                     waitingActionCount: permissions.count,
                     isExpanded: shouldExpand,
+                    collapsedUsage: settings.showUsageWhenCollapsed && settings.showAccountUsage
+                        ? sessionManager.usage : nil,
                     offersExpandChevron: manuallyCollapsed,
                     // The chevron is the way out of a panel an action forced
                     // open, which the hover state machine cannot close. It is a

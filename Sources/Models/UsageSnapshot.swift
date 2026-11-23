@@ -117,6 +117,25 @@ struct UsageSnapshot: Equatable {
         return snapshot.isEmpty ? nil : snapshot
     }
 
+    /// The snapshot as it stands at `now`.
+    ///
+    /// A reading only says how full a window was when it was taken. Once the
+    /// window's reset time has passed, a new one has begun and the old figure
+    /// describes nothing — which is how the panel came to show last week's
+    /// numbers until the next report arrived.
+    func current(now: Date = Date()) -> UsageSnapshot {
+        func live(_ window: RateLimitWindow?) -> RateLimitWindow? {
+            guard let window, let resetsAt = window.resetsAt, resetsAt <= now else { return window }
+            return RateLimitWindow(usedPercentage: 0, resetsAt: nil)
+        }
+        var copy = self
+        copy.fiveHour = live(fiveHour)
+        copy.sevenDay = live(sevenDay)
+        copy.sevenDayOpus = live(sevenDayOpus)
+        copy.sevenDaySonnet = live(sevenDaySonnet)
+        return copy
+    }
+
     /// The window closest to running out — what a one-glance readout should show.
     var mostUsed: (label: String, window: RateLimitWindow)? {
         let candidates: [(String, RateLimitWindow?)] = [

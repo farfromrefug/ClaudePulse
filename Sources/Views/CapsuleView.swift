@@ -43,6 +43,9 @@ struct CapsuleView: View {
     /// still there after the panel has been collapsed on top of them.
     var waitingActionCount: Int = 0
     var isExpanded: Bool = false
+    /// The account limits to keep on the capsule while it is collapsed, or nil
+    /// when the user has not asked for them there.
+    var collapsedUsage: UsageSnapshot?
     /// Set while the panel is closed because the user closed it, which is the
     /// one case where the chevron has to offer the way back in.
     var offersExpandChevron: Bool = false
@@ -105,6 +108,10 @@ struct CapsuleView: View {
                 .help(waitingActionCount == 1
                       ? "1 action waiting for you"
                       : "\(waitingActionCount) actions waiting for you")
+            }
+
+            if let collapsedUsage, !isExpanded {
+                CompactUsageView(usage: collapsedUsage)
             }
 
             if let session = session, session.isActive, panelVisible, settings.showSessionDuration {
