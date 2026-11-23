@@ -41,6 +41,10 @@ struct PermissionRow: View {
     /// than the size setting gives every prompt.
     @State private var expanded = false
 
+    /// Options picked so far, per question, for a call that needs more than
+    /// one click to answer.
+    @State private var picks: [String: Set<String>] = [:]
+
     /// The size setting is the floor; expanding a single row lifts it.
     private var detailSize: ActionDetail {
         expanded ? .full : settings.actionDetail
@@ -85,14 +89,28 @@ struct PermissionRow: View {
                 }
             }
 
-            if !detailText.isEmpty {
+            if let questions = permission.questions {
+                questionView(questions, scale: s)
+            } else if !detailText.isEmpty {
                 detailView(text: detailText, scale: s)
             }
 
             HStack(spacing: 5) {
                 let words = permission.vocabulary
-                PermissionButton(title: words.allow, tint: settings.accentColor) {
-                    onDecision(.allow)
+                if let questions = permission.questions {
+                    // One question with one answer is answered by the click on
+                    // it; anything bigger is sent once every question has one.
+                    if !answersOnClick(questions) {
+                        PermissionButton(title: "Send", tint: settings.accentColor, help: "Answer with the choices above") {
+                            onDecision(.answer(chosenAnswers(for: questions)))
+                        }
+                        .opacity(isComplete(questions) ? 1 : 0.35)
+                        .disabled(!isComplete(questions))
+                    }
+                } else {
+                    PermissionButton(title: words.allow, tint: settings.accentColor) {
+                        onDecision(.allow)
+                    }
                 }
                 if permission.canAllowAlways {
                     PermissionButton(title: "Allow all", tint: settings.accentColor.opacity(0.75)) {
@@ -126,6 +144,66 @@ struct PermissionRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .onTapGesture { onFocusSession() }
         .help("Click to reveal this session — the buttons answer without leaving Pulse")
+    }
+
+    // MARK: - Questions
+
+    private func answersOnClick(_ questions: [AskedQuestion]) -> Bool {
+        questions.count == 1 && !questions[0].multiSelect
+    }
+
+    private func isComplete(_ questions: [AskedQuestion]) -> Bool {
+        questions.allSatisfy { !(picks[$0.question] ?? []).isEmpty }
+    }
+
+    /// Labels in the order the options were offered, joined the way Claude
+    /// Code joins the answer to a multi-select question.
+    private func chosenAnswers(for questions: [AskedQuestion]) -> [String: String] {
+        var answers: [String: String] = [:]
+        for question in questions {
+            let chosen = picks[question.question] ?? []
+            answers[question.question] = question.options.map(\.label)
+                .filter(chosen.contains)
+                .joined(separator: ", ")
+        }
+        return answers
+    }
+
+    private func choose(_ label: String, for question: AskedQuestion, in questions: [AskedQuestion]) {
+        if answersOnClick(questions) {
+            onDecision(.answer([question.question: label]))
+            return
+        }
+        var chosen = picks[question.question] ?? []
+        if question.multiSelect {
+            if chosen.contains(label) { chosen.remove(label) } else { chosen.insert(label) }
+        } else {
+            chosen = [label]
+        }
+        picks[question.question] = chosen
+    }
+
+    @ViewBuilder
+    private func questionView(_ questions: [AskedQuestion], scale s: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(questions, id: \.question) { question in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(question.question)
+                        .font(.system(size: 11 * s))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                    ForEach(question.options, id: \.label) { option in
+                        QuestionOptionButton(
+                            option: option,
+                            selected: picks[question.question]?.contains(option.label) == true,
+                            multiSelect: question.multiSelect
+                        ) {
+                            choose(option.label, for: question, in: questions)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// A compact prompt keeps its one-line summary; the larger sizes wrap and
@@ -169,6 +247,54 @@ private struct PermissionButton: View {
         }
         .buttonStyle(.plain)
         .help(help ?? "")
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) { hovered = hovering }
+        }
+    }
+}
+
+private struct QuestionOptionButton: View {
+    let option: AskedQuestion.Option
+    let selected: Bool
+    let multiSelect: Bool
+    let action: () -> Void
+
+    @State private var hovered = false
+    private let settings = PanelSettings.shared
+
+    var body: some View {
+        let s = settings.textSize.scale
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if multiSelect {
+                    Image(systemName: selected ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 10 * s))
+                        .foregroundStyle(.white.opacity(selected ? 0.9 : 0.4))
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label)
+                        .font(.system(size: 10 * s, weight: .semibold))
+                        .foregroundStyle(.white.opacity(hovered || selected ? 1.0 : 0.85))
+                    if let description = option.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 9 * s))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                settings.accentColor.opacity(selected ? 0.5 : (hovered ? 0.35 : 0.2)),
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) { hovered = hovering }
         }

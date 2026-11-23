@@ -6,6 +6,9 @@ enum PermissionDecision {
     /// Allow and persist the rules Claude Code suggested ("don't ask again").
     case allowAlways
     case deny
+    /// Answer an `AskUserQuestion`: the chosen label for each question, keyed
+    /// by the question's text.
+    case answer([String: String])
     /// Return no decision so Claude Code shows its own prompt in the terminal.
     case deferToTerminal
 }
@@ -48,6 +51,44 @@ struct PermissionVocabulary: Equatable {
     }
 }
 
+/// One question of an `AskUserQuestion` call, as Claude Code sends it.
+struct AskedQuestion: Equatable {
+    struct Option: Equatable {
+        let label: String
+        let description: String?
+    }
+
+    let question: String
+    let header: String?
+    let options: [Option]
+    let multiSelect: Bool
+
+    /// The questions in an `AskUserQuestion` input, or nil when the input has
+    /// none worth drawing buttons for — the terminal prompt stays the way out.
+    static func parse(_ toolInput: JSONValue?) -> [AskedQuestion]? {
+        guard case .array(let items)? = toolInput?["questions"] else { return nil }
+        let questions: [AskedQuestion] = items.compactMap { item in
+            guard let text = item["question"]?.stringValue,
+                  case .array(let rawOptions)? = item["options"] else { return nil }
+            let options = rawOptions.compactMap { raw -> Option? in
+                guard let label = raw["label"]?.stringValue else { return nil }
+                return Option(label: label, description: raw["description"]?.stringValue)
+            }
+            guard !options.isEmpty else { return nil }
+            var multiSelect = false
+            if case .bool(let flag)? = item["multiSelect"] { multiSelect = flag }
+            return AskedQuestion(
+                question: text,
+                header: item["header"]?.stringValue,
+                options: options,
+                multiSelect: multiSelect
+            )
+        }
+        // A partly understood call must not be answered in part.
+        return questions.isEmpty || questions.count != items.count ? nil : questions
+    }
+}
+
 /// A permission prompt Claude Code is blocked on while Pulse holds the hook
 /// connection open. Answering it writes the decision back as the HTTP response.
 @Observable
@@ -79,6 +120,11 @@ final class PendingPermission: Identifiable {
         self.createdAt = Date()
         self.expiresAt = Date().addingTimeInterval(timeout)
         self.responder = responder
+    }
+
+    /// The questions Pulse can put buttons on, for an `AskUserQuestion` call.
+    var questions: [AskedQuestion]? {
+        vocabulary == .question ? AskedQuestion.parse(toolInput) : nil
     }
 
     var canAllowAlways: Bool { !suggestions.isEmpty && vocabulary.offersAllowAlways }

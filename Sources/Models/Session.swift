@@ -75,12 +75,15 @@ class Session: Identifiable {
         case "PermissionDenied":
             state = .working
         case "Notification":
-            // Claude Code notifies on "needs your permission" and "waiting for input"
+            // Claude Code notifies on "needs your permission" and "waiting for input".
+            // The second one follows a finished turn by a minute or so, and says
+            // nothing the finished mark did not already.
+            if event.notificationType == "idle_prompt" && state == .finished { break }
             state = .waitingForUser
         case "Stop":
             toolInFlight = false
             let wasWorking = state == .working
-            state = .idle
+            state = .finished
             if wasWorking && PanelSettings.shared.soundOnComplete {
                 NSSound(named: .init(PanelSettings.shared.soundName))?.play()
             }

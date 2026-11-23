@@ -117,7 +117,7 @@ class SessionManager {
             suggestions: suggestions,
             timeout: timeout
         ) { [weak self] decision in
-            connection.respond(json: Self.hookOutput(for: decision, suggestions: suggestions))
+            connection.respond(json: Self.hookOutput(for: decision, suggestions: suggestions, toolInput: event.toolInput))
             DispatchQueue.main.async { self?.removePermission(id: id) }
         }
 
@@ -137,7 +137,11 @@ class SessionManager {
     }
 
     /// Builds the `PermissionRequest` hook output Claude Code expects.
-    static func hookOutput(for decision: PermissionDecision, suggestions: [JSONValue]) -> [String: Any] {
+    static func hookOutput(
+        for decision: PermissionDecision,
+        suggestions: [JSONValue],
+        toolInput: JSONValue? = nil
+    ) -> [String: Any] {
         var decisionBody: [String: Any]
         switch decision {
         case .deferToTerminal:
@@ -153,6 +157,16 @@ class SessionManager {
             }
         case .deny:
             decisionBody = ["behavior": "deny", "message": "Denied from Pulse"]
+        case .answer(let answers):
+            // The question is answered by handing the tool its own input back
+            // with the answers filled in; "allow" alone would ask again.
+            var input: [String: Any] = [:]
+            if let toolInput, let data = try? JSONEncoder().encode(toolInput),
+               let original = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                input = original
+            }
+            input["answers"] = answers
+            decisionBody = ["behavior": "allow", "updatedInput": input]
         }
         return [
             "hookSpecificOutput": [
@@ -177,7 +191,7 @@ class SessionManager {
 
         session.lastEventTime = Date()
         switch decision {
-        case .allow, .allowAlways, .deny:
+        case .allow, .allowAlways, .deny, .answer:
             // Claude carries on either way: it runs the tool, or it is told it
             // may not and reacts to that.
             session.state = .working
@@ -300,7 +314,7 @@ class SessionManager {
                 if session.looksBusy(now: now, quietFor: Self.quietBeforeIdle) {
                     session.lastEventTime = now
                 } else {
-                    session.state = .idle
+                    session.state = .finished
                 }
             }
         }

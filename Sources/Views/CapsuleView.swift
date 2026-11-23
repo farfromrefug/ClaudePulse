@@ -173,6 +173,7 @@ struct CapsuleView: View {
         case .idle: return "Idle"
         case .working: return "Working..."
         case .waitingForUser: return "Waiting"
+        case .finished: return "Done"
         case .stale: return "Stale"
         }
     }
@@ -201,6 +202,10 @@ struct SessionStateGlyph: View {
                         .font(.system(size: 11 * scale, weight: .semibold))
                         .opacity(Self.pulseOpacities[tick % Self.pulseOpacities.count])
                 }
+            case .finished:
+                // Still, where waiting breathes: done wants a look, not a click.
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10 * scale, weight: .semibold))
             case .idle:
                 Image(systemName: "circle.fill")
                     .font(.system(size: 5 * scale))
@@ -242,6 +247,7 @@ struct SessionStateGlyph: View {
         case .idle: return .gray
         case .working: return settings.accentColor
         case .waitingForUser: return .orange
+        case .finished: return .green
         case .stale: return .gray.opacity(0.5)
         }
     }

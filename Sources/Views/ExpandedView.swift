@@ -125,6 +125,7 @@ struct SessionRow: View {
         case .idle: return .gray
         case .working: return PanelSettings.shared.accentColor
         case .waitingForUser: return .orange
+        case .finished: return .green
         case .stale: return .gray.opacity(0.5)
         }
     }
@@ -134,6 +135,7 @@ struct SessionRow: View {
         case .idle: return ""
         case .working: return "working"
         case .waitingForUser: return "waiting"
+        case .finished: return "done"
         case .stale: return "stale"
         }
     }

@@ -57,9 +57,28 @@ enum SessionOpener {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.anthropic.claudefordesktop") != nil
     }
 
+    // MARK: - T3 Code
+
+    /// Focuses the T3 Code thread running a session, or just the app when the
+    /// thread cannot be named.
+    private static func openInT3Code(threadId: String?) -> Bool {
+        guard appURL(T3CodeSessions.bundleIdentifier) != nil else { return false }
+        if let threadId, let url = T3CodeSessions.threadURL(threadId: threadId) {
+            NSWorkspace.shared.open(url)
+            return true
+        }
+        return activate(bundleId: T3CodeSessions.bundleIdentifier)
+    }
+
     // MARK: - Known terminals
 
     private static func focus(origin: TerminalOrigin, cwd: String?) -> Bool {
+        // T3 Code has neither a terminal nor an editor window to find: it is
+        // one app with a thread per session, and a link names the thread.
+        if origin.isT3Code {
+            return openInT3Code(threadId: origin.t3CodeThreadId)
+        }
+
         // The extension's sessions report no terminal, and an editor started
         // from one reports that terminal's name — so ask about the editor first.
         if origin.isVSCodeFamily {

@@ -8,14 +8,16 @@ final class SessionTests: XCTestCase {
         name: String,
         cwd: String? = nil,
         toolName: String? = nil,
-        prompt: String? = nil
+        prompt: String? = nil,
+        notificationType: String? = nil
     ) -> HookEvent {
         let json: [String: Any?] = [
             "session_id": sessionId,
             "hook_event_name": name,
             "cwd": cwd,
             "tool_name": toolName,
-            "prompt": prompt
+            "prompt": prompt,
+            "notification_type": notificationType
         ]
         let data = try! JSONSerialization.data(withJSONObject: json.compactMapValues { $0 })
         return try! JSONDecoder().decode(HookEvent.self, from: data)
@@ -67,14 +69,38 @@ final class SessionTests: XCTestCase {
         XCTAssertTrue(session.isActive)
     }
 
-    func testStopSetsIdle() {
+    func testStopMarksTheTurnFinished() {
         let session = Session(id: "s1")
         session.handleEvent(makeEvent(name: "UserPromptSubmit"))
         XCTAssertEqual(session.state, .working)
 
         session.handleEvent(makeEvent(name: "Stop"))
-        XCTAssertEqual(session.state, .idle)
+        XCTAssertEqual(session.state, .finished)
         XCTAssertFalse(session.isActive)
+    }
+
+    /// Pulse may first hear of a session when it finishes, having missed it start.
+    func testStopFinishesASessionPulseNeverSawWorking() {
+        let session = Session(id: "s1")
+        session.handleEvent(makeEvent(name: "Stop"))
+        XCTAssertEqual(session.state, .finished)
+    }
+
+    func testNextPromptClearsFinished() {
+        let session = Session(id: "s1")
+        session.handleEvent(makeEvent(name: "Stop"))
+        session.handleEvent(makeEvent(name: "UserPromptSubmit"))
+        XCTAssertEqual(session.state, .working)
+    }
+
+    func testIdlePromptNotificationDoesNotUndoFinished() {
+        let session = Session(id: "s1")
+        session.handleEvent(makeEvent(name: "Stop"))
+        session.handleEvent(makeEvent(name: "Notification", notificationType: "idle_prompt"))
+        XCTAssertEqual(session.state, .finished)
+
+        session.handleEvent(makeEvent(name: "Notification", notificationType: "permission_prompt"))
+        XCTAssertEqual(session.state, .waitingForUser)
     }
 
     func testUnknownEventDoesNotChangeState() {
