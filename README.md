@@ -13,6 +13,7 @@ A macOS menu bar app that brings **Dynamic Island-inspired** real-time monitorin
 - **Menu Bar Integration** — Quick controls from the system menu bar: show/hide, pin expanded view, adjust position
 - **Sized to the Task** — A width slider (not just S/M/L type) and an action-detail setting, so a prompt you have to decide on can show its whole tool input
 - **Permission Prompts in the Panel** — Answer Claude Code's permission requests with Allow / Allow all / Deny without switching to the terminal, and pick an answer to `AskUserQuestion` from its option buttons (opt-in)
+- **Usage Where You Want It** — Keep the 5-hour and weekly limits on the collapsed capsule, or draw them in the menu bar (click for details, right-click for the menu). Optionally poll Anthropic with your Claude Code login so they stay current even when only T3 Code is running
 - **Click to Jump Back** — Clicking a session focuses the terminal tab, pane, or editor window it is running in, opens the T3 Code thread, or hands it to Claude for Desktop (Option-click forces that)
 - **Push, Not Polling** — Claude Code posts events straight to the app over native HTTP hooks; no subprocesses, no file watching
 - **Zero Configuration** — Automatically sets up Claude Code hooks on first launch

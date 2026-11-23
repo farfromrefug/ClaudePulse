@@ -222,6 +222,30 @@ class PanelSettings {
         didSet { UserDefaults.standard.set(showAccountUsage, forKey: "showAccountUsage") }
     }
 
+    /// Poll Anthropic for the account limits with the login Claude Code keeps
+    /// in the Keychain. The only source that stays current when no terminal
+    /// status line and no Claude for Desktop is running — T3 Code, say.
+    var liveUsageFromAPI: Bool {
+        didSet {
+            UserDefaults.standard.set(liveUsageFromAPI, forKey: "liveUsageFromAPI")
+            NotificationCenter.default.post(name: .ccaniLiveUsageChanged, object: nil)
+        }
+    }
+
+    /// Keep the limits on the capsule while the panel is collapsed.
+    var showUsageWhenCollapsed: Bool {
+        didSet { UserDefaults.standard.set(showUsageWhenCollapsed, forKey: "showUsageWhenCollapsed") }
+    }
+
+    /// Put the limits in the menu bar. A click then shows them, and the menu
+    /// (quit, settings...) moves to the right button.
+    var showUsageInMenuBar: Bool {
+        didSet {
+            UserDefaults.standard.set(showUsageInMenuBar, forKey: "showUsageInMenuBar")
+            NotificationCenter.default.post(name: .ccaniMenuBarChanged, object: nil)
+        }
+    }
+
     var showDockIcon: Bool {
         didSet {
             UserDefaults.standard.set(showDockIcon, forKey: "showDockIcon")
@@ -306,6 +330,9 @@ class PanelSettings {
             || UserDefaults.standard.bool(forKey: "showSessionDuration")
         self.showAccountUsage = UserDefaults.standard.object(forKey: "showAccountUsage") == nil
             || UserDefaults.standard.bool(forKey: "showAccountUsage")
+        self.liveUsageFromAPI = UserDefaults.standard.bool(forKey: "liveUsageFromAPI")
+        self.showUsageWhenCollapsed = UserDefaults.standard.bool(forKey: "showUsageWhenCollapsed")
+        self.showUsageInMenuBar = UserDefaults.standard.bool(forKey: "showUsageInMenuBar")
         self.showDockIcon = UserDefaults.standard.bool(forKey: "showDockIcon")
         self.statusLinePromptDismissed = UserDefaults.standard.bool(forKey: "statusLinePromptDismissed")
         self.soundOnComplete = UserDefaults.standard.bool(forKey: "soundOnComplete")

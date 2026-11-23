@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 @testable import ccpulse
 
 /// The panel's anchoring, which is what keeps a growing panel where the user
@@ -88,5 +89,29 @@ final class PanelGeometryTests: XCTestCase {
         let previous = NSRect(x: 1148, y: 12, width: 280, height: 300)
         let proposed = NSRect(x: 400, y: 500, width: 280, height: 300)
         XCTAssertEqual(anchor(proposed, from: previous, position: .bottomRight), proposed)
+    }
+}
+
+final class EmptyStripTests: XCTestCase {
+
+    /// A 400pt window holding 118pt of bottom-aligned content, in the flipped
+    /// coordinates the hosting view uses: the content is the bottom 118pt.
+    func testCapsuleAtTheBottomOfATallWindowIsNotTheEmptyStrip() {
+        XCTAssertFalse(SizeTrackingHostingView<EmptyView>.isInEmptyStrip(
+            y: 372, boundsHeight: 400, contentHeight: 118, flipped: true))
+        XCTAssertFalse(SizeTrackingHostingView<EmptyView>.isInEmptyStrip(
+            y: 282, boundsHeight: 400, contentHeight: 118, flipped: true))
+    }
+
+    func testSpaceAboveTheContentIsTheEmptyStrip() {
+        XCTAssertTrue(SizeTrackingHostingView<EmptyView>.isInEmptyStrip(
+            y: 100, boundsHeight: 400, contentHeight: 118, flipped: true))
+        XCTAssertTrue(SizeTrackingHostingView<EmptyView>.isInEmptyStrip(
+            y: 200, boundsHeight: 400, contentHeight: 118, flipped: false))
+    }
+
+    func testContentFillingTheWindowHasNoStrip() {
+        XCTAssertFalse(SizeTrackingHostingView<EmptyView>.isInEmptyStrip(
+            y: 0, boundsHeight: 400, contentHeight: 400, flipped: true))
     }
 }

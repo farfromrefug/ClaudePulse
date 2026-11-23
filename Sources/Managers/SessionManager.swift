@@ -13,11 +13,17 @@ class SessionManager {
     private let planUsageReader = PlanUsageReader()
     private var planUsageFileDate: Date?
     private var permissionTimers: [String: Timer] = [:]
+    private var liveUsageTimer: Timer?
+    private var liveUsageFetchInFlight = false
 
     init() {
         refreshPlanUsage()
         startPlanUsageCheck()
         startStalenessCheck()
+        configureLiveUsage()
+        NotificationCenter.default.addObserver(
+            forName: .ccaniLiveUsageChanged, object: nil, queue: .main
+        ) { [weak self] _ in self?.configureLiveUsage() }
     }
 
     var activeSession: Session? {
@@ -259,6 +265,37 @@ class SessionManager {
         if let current = usage, current.updatedAt > snapshot.updatedAt { return }
         usage = snapshot
         snapshot.persist()
+        NotificationCenter.default.post(name: .ccaniUsageChanged, object: nil)
+    }
+
+    // MARK: - Live usage
+
+    /// How often Anthropic is asked. The limits move by the minute at most, and
+    /// each ask is a network round trip with the user's own login.
+    static let liveUsageInterval: TimeInterval = 300
+
+    private func configureLiveUsage() {
+        liveUsageTimer?.invalidate()
+        liveUsageTimer = nil
+        guard PanelSettings.shared.liveUsageFromAPI else { return }
+        refreshLiveUsage()
+        liveUsageTimer = Timer.scheduledTimer(withTimeInterval: Self.liveUsageInterval, repeats: true) { [weak self] _ in
+            self?.refreshLiveUsage()
+        }
+    }
+
+    /// A failed ask changes nothing: the last reading stays, and `current`
+    /// keeps it from outliving its window.
+    func refreshLiveUsage() {
+        guard !liveUsageFetchInFlight else { return }
+        liveUsageFetchInFlight = true
+        ClaudeUsageAPI.fetch { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.liveUsageFetchInFlight = false
+                if case .success(let snapshot) = result { self.adopt(snapshot) }
+            }
+        }
     }
 
     /// Claude Code renders its status line per session, so each payload updates

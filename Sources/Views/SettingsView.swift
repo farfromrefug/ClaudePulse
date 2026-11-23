@@ -309,6 +309,28 @@ struct SettingsView: View {
                     }
                 }
 
+                // Usage on the capsule, in the menu bar, and kept live
+                SettingsToggleRow(
+                    title: "Usage When Collapsed",
+                    subtitle: "Keep the 5-hour and weekly limits on the capsule",
+                    isOn: Binding(get: { settings.showUsageWhenCollapsed },
+                                  set: { settings.showUsageWhenCollapsed = $0 })
+                )
+
+                SettingsToggleRow(
+                    title: "Usage in Menu Bar",
+                    subtitle: "Show the limits in the menu bar. Click for details, right-click for the menu",
+                    isOn: Binding(get: { settings.showUsageInMenuBar },
+                                  set: { settings.showUsageInMenuBar = $0 })
+                )
+
+                SettingsToggleRow(
+                    title: "Live Usage from Anthropic",
+                    subtitle: "Ask Anthropic for your limits every 5 minutes, using the Claude Code login in your Keychain. Keeps them current when only T3 Code or another app without a status line is running",
+                    isOn: Binding(get: { settings.liveUsageFromAPI },
+                                  set: { settings.liveUsageFromAPI = $0 })
+                )
+
                 // Start at login
                 if LaunchAtLogin.isAvailable {
                     SettingsToggleRow(
@@ -776,7 +798,7 @@ class SettingsWindowController {
                 panel?.orderOut(nil)
             }
         )
-        let hostingView = NSHostingView(rootView: settingsView)
+        let hostingView = DraggableHostingView(rootView: settingsView)
         hostingView.sizingOptions = [.intrinsicContentSize]
         panel.contentView = hostingView
 
